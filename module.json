@@ -2,7 +2,7 @@
     "id": "pf2e-exploration-automation",
     "title": "PF2e Exploration Automation",
     "description": "Automates exploration activities and checks.",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "authors": [
         {
             "name": "Arkady Babaev"
@@ -23,6 +23,7 @@
             }
         ]
     },
+    "socket": true,
     "esmodules": [
         "scripts/main.js"
     ]
