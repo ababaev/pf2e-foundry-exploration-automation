@@ -1,8 +1,13 @@
 {
-    "id": "region-automation",
-    "title": "Region Automation",
-    "description": "Automates exploration activities and checks using Regions.",
+    "id": "pf2e-exploration-automation",
+    "title": "PF2e Exploration Automation",
+    "description": "Automates exploration activities and checks.",
     "version": "0.1.0",
+    "authors": [
+        {
+            "name": "Arkady Babaev"
+        }
+    ],
     "compatibility": {
         "minimum": "14",
         "verified": "14"
