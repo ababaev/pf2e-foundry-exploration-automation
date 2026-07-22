@@ -1,0 +1,24 @@
+{
+    "id": "region-automation",
+    "title": "Region Automation",
+    "description": "Automates exploration activities and checks using Regions.",
+    "version": "0.1.0",
+    "compatibility": {
+        "minimum": "14",
+        "verified": "14"
+    },
+    "relationships": {
+        "systems": [
+            {
+                "id": "pf2e",
+                "type": "system",
+                "compatibility": {
+                    "minimum": "8.3.0"
+                }
+            }
+        ]
+    },
+    "esmodules": [
+        "scripts/main.js"
+    ]
+}
