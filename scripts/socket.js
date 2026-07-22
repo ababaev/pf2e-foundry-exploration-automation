@@ -22,7 +22,7 @@ import {
 } from "./executor.js";
 
 export const MODULE_ID =
-    "region-automation";
+    "pf2e-exploration-automation";
 
 export const SOCKET_CHANNEL =
     `module.${MODULE_ID}`;

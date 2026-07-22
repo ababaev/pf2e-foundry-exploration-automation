@@ -26,7 +26,7 @@
  */
 
 export const MODULE_ID =
-    "region-automation";
+    "pf2e-exploration-automation";
 
 /**
  * The functionality flag stored in the RegionBehavior determines
