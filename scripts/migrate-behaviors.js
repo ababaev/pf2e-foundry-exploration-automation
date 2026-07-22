@@ -22,7 +22,7 @@
  */
 
 const MODULE_ID =
-    "region-automation";
+    "pf2e-exploration-automation";
 
 const SUPPORTED_FUNCTIONALITIES =
     new Set([
@@ -43,7 +43,7 @@ const SUPPORTED_FUNCTIONALITIES =
 export const GENERIC_BEHAVIOR_SOURCE = `
 const raApi =
     game.modules
-        .get("region-automation")
+        .get("pf2e-exploration-automation")
         ?.api;
 
 if (
