@@ -1,16 +1,6 @@
 /**
  * PF2e Exploration Automation
  * scripts/main.js
- *
- * MODULE ENTRY POINT
- * ==================
- *
- * This file:
- *
- * 1. Exposes the module API used by Region Behaviors.
- * 2. Registers the player-to-GM socket.
- * 3. Migrates existing Region Behavior scripts.
- * 4. Normalizes newly created Region Automation Behaviors.
  */
 
 import {
@@ -30,34 +20,50 @@ import {
 const AUTO_MIGRATE_BEHAVIORS =
     true;
 
+let apiInitialized =
+    false;
+
+let readyInitialized =
+    false;
+
 /**
- * Expose the API immediately.
+ * Expose the public module API.
  *
- * We do not wait for the init hook, because init fires only once.
+ * During early ES-module evaluation, game may exist while
+ * game.modules is still unavailable. Therefore this function must
+ * tolerate being called before Foundry's init hook.
  */
 function exposeApi() {
-    const module =
-        game.modules.get(
-            MODULE_ID,
-        );
+    if (apiInitialized) {
+        return true;
+    }
 
-    if (!module) {
-        console.error(
-            `PF2e Exploration Automation | Module "${MODULE_ID}" was not found.`,
-        );
+    const packageModule =
+        globalThis.game
+            ?.modules
+            ?.get?.(
+                MODULE_ID,
+            ) ??
+        null;
 
+    if (!packageModule) {
         return false;
     }
 
-    module.api = {
+    packageModule.api = {
         requestBehaviorExecution,
         migrateWorldBehaviors,
         normalizeBehaviorSource,
+
         genericBehaviorSource:
             GENERIC_BEHAVIOR_SOURCE,
+
         getPrimaryGM,
         isPrimaryGM,
     };
+
+    apiInitialized =
+        true;
 
     console.log(
         "PF2e Exploration Automation | API initialized.",
@@ -66,10 +72,8 @@ function exposeApi() {
     return true;
 }
 
-exposeApi();
-
 /**
- * Normalize newly created Region Automation Behaviors.
+ * Normalize newly created automation Behaviors.
  */
 Hooks.on(
     "createRegionBehavior",
@@ -97,45 +101,111 @@ Hooks.on(
 );
 
 /**
- * Socket registration and world migration require a ready world.
+ * Initialize everything that requires a ready world.
  */
-Hooks.once(
-    "ready",
-    async () => {
-        registerSocket();
+async function initializeReady() {
+    if (readyInitialized) {
+        return;
+    }
 
-        if (!isPrimaryGM()) {
-            console.log(
-                "PF2e Exploration Automation | Player or secondary GM ready.",
-            );
+    readyInitialized =
+        true;
 
-            return;
-        }
-
-        console.log(
-            "PF2e Exploration Automation | Primary GM ready.",
+    /*
+     * Normally the API was exposed during init.
+     * Retry here defensively in case game.modules was not ready then.
+     */
+    if (!exposeApi()) {
+        console.error(
+            `PF2e Exploration Automation | Module "${MODULE_ID}" is unavailable after the ready hook.`,
         );
 
-        if (!AUTO_MIGRATE_BEHAVIORS) {
-            return;
-        }
+        return;
+    }
 
-        try {
-            const summary =
-                await migrateWorldBehaviors({
-                    notify:
-                        false,
-                });
+    try {
+        registerSocket();
+    } catch (error) {
+        console.error(
+            "PF2e Exploration Automation | Socket registration failed.",
+            error,
+        );
 
-            console.log(
-                "PF2e Exploration Automation | Behavior migration finished.",
-                summary,
-            );
-        } catch (error) {
-            console.error(
-                "PF2e Exploration Automation | Behavior migration failed.",
-                error,
-            );
-        }
-    },
-);
+        return;
+    }
+
+    if (!isPrimaryGM()) {
+        console.log(
+            "PF2e Exploration Automation | Player or secondary GM ready.",
+        );
+
+        return;
+    }
+
+    console.log(
+        "PF2e Exploration Automation | Primary GM ready.",
+    );
+
+    if (!AUTO_MIGRATE_BEHAVIORS) {
+        return;
+    }
+
+    try {
+        const summary =
+            await migrateWorldBehaviors({
+                notify:
+                    false,
+            });
+
+        console.log(
+            "PF2e Exploration Automation | Behavior migration finished.",
+            summary,
+        );
+    } catch (error) {
+        console.error(
+            "PF2e Exploration Automation | Behavior migration failed.",
+            error,
+        );
+    }
+}
+
+/*
+ * Normal startup:
+ * module file loads first, API is exposed during init.
+ *
+ * Late diagnostic import:
+ * game.modules already exists, so expose it immediately.
+ */
+if (
+    globalThis.game
+        ?.modules
+        ?.get?.(
+            MODULE_ID,
+        )
+) {
+    exposeApi();
+} else {
+    Hooks.once(
+        "init",
+        () => {
+            if (!exposeApi()) {
+                console.warn(
+                    "PF2e Exploration Automation | API was not available during init; ready will retry.",
+                );
+            }
+        },
+    );
+}
+
+/*
+ * Normal startup waits for ready.
+ * A late import after ready initializes immediately.
+ */
+if (globalThis.game?.ready) {
+    void initializeReady();
+} else {
+    Hooks.once(
+        "ready",
+        initializeReady,
+    );
+}
