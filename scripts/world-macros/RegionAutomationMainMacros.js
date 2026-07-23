@@ -1,5 +1,4 @@
 await (async () => {
-    "use strict";
 
     const findSingleMacro = name => {
         const matches =

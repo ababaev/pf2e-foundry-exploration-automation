@@ -18,7 +18,6 @@ export async function runSearch({
     token = null,
     actor = null,
 } = {}) {
-    "use strict";
 
     const MODULE_ID =
         "pf2e-exploration-automation";

@@ -4,7 +4,6 @@ export async function registerTokenTrigger({
     debug = false,
     resultBox = null,
 } = {}) {
-    "use strict";
 
 /*
  * RegistrationMacros

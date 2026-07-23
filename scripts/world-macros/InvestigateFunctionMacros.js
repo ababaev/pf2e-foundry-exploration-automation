@@ -1,5 +1,4 @@
 (async () => {
-    "use strict";
 
     const MODULE_ID = "pf2e-exploration-automation";
 

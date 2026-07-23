@@ -1,43 +1,43 @@
 await (async () => {
-    "use strict";
 
     const MODULE_ID = "pf2e-exploration-automation";
 
-const BEHAVIOR_SOURCE = `
-const moduleApi =
-    game.modules
-        .get("pf2e-exploration-automation")
-        ?.api;
+    const BEHAVIOR_SOURCE = `
+    const moduleApi =
+        game.modules
+            .get("pf2e-exploration-automation")
+            ?.api;
 
-if (
-    !moduleApi ||
-    typeof moduleApi.requestBehaviorExecution !==
-        "function"
-) {
-    console.error(
-        "PF2e Exploration Automation | Module API is unavailable.",
-        {
-            behavior,
-            event,
-            region,
-            scene,
-        },
-    );
-} else {
-    await moduleApi.requestBehaviorExecution({
-        behaviorUuid:
-            behavior?.uuid,
+    if (
+        !moduleApi ||
+        typeof moduleApi.requestBehaviorExecution !==
+            "function"
+    ) {
+        console.error(
+            "PF2e Exploration Automation | Module API is unavailable.",
+            {
+                behavior,
+                event,
+                region,
+                scene,
+            },
+        );
+    } else {
+        await moduleApi.requestBehaviorExecution({
+            behaviorUuid:
+                behavior?.uuid,
 
-        tokenUuid:
-            event?.data?.token?.document?.uuid ??
-            event?.data?.token?.uuid,
+            tokenUuid:
+                event?.data?.token?.document?.uuid ??
+                event?.data?.token?.uuid,
 
-        eventName:
-            event?.name ??
-            "tokenEnter",
-    });
-}
-`.trim();
+            eventName:
+                event?.name ??
+                "tokenEnter",
+        });
+    }
+    `.trim();
+
     const TARGET_TYPES = Object.freeze({
         npc: {
             label: "NPC / Creature",

@@ -5,7 +5,6 @@ export async function checkExplorationActivity({
     debug = false,
     resultBox = null,
 } = {}) {
-    "use strict";
 
 /*
  * Expected Macro.execute scope:

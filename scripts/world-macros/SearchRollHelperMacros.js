@@ -8,7 +8,6 @@ export async function runSearchRoll({
     debug = false,
     resultBox = null,
 } = {}) {
-    "use strict";
 
     const MODULE_ID =
         "pf2e-exploration-automation";
