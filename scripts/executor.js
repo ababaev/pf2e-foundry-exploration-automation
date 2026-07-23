@@ -50,6 +50,15 @@ export const FUNCTION_MACRO_NAMES =
     });
 
 /**
+ * Functionality already moved from world macros into the module.
+ */
+const MODULE_FUNCTIONS =
+    Object.freeze({
+        search:
+            runSearch,
+    });
+
+/**
  * Requests for the same Behavior and Token can occasionally arrive
  * from more than one client.
  *
@@ -506,12 +515,22 @@ export async function executeBehaviorRequest(
             behavior,
         );
 
+    const moduleFunction =
+        MODULE_FUNCTIONS[
+            functionality
+        ] ??
+        null;
+
     const functionMacroName =
         FUNCTION_MACRO_NAMES[
             functionality
-        ];
+        ] ??
+        null;
 
-    if (!functionMacroName) {
+    if (
+        !moduleFunction &&
+        !functionMacroName
+    ) {
         const result = {
             ok: false,
 
@@ -559,12 +578,20 @@ export async function executeBehaviorRequest(
     );
 
     try {
-        const functionMacro =
-            game.macros.getName(
-                functionMacroName,
-            );
+        let functionMacro =
+            null;
 
-        if (!functionMacro) {
+        if (!moduleFunction) {
+            functionMacro =
+                game.macros.getName(
+                    functionMacroName,
+                );
+        }
+
+        if (
+            !moduleFunction &&
+            !functionMacro
+        ) {
             const result = {
                 ok: false,
 
@@ -624,7 +651,7 @@ export async function executeBehaviorRequest(
         /**
          * This is deliberately executed only on the GM client.
          */
-        await functionMacro.execute({
+        const executionContext = {
             behavior,
             event:
                 syntheticEvent,
@@ -632,7 +659,17 @@ export async function executeBehaviorRequest(
             scene,
             token,
             actor,
-        });
+        };
+
+        if (moduleFunction) {
+            await moduleFunction(
+                executionContext,
+            );
+        } else {
+            await functionMacro.execute(
+                executionContext,
+            );
+        }
 
         recentRequestIds.set(
             requestId,

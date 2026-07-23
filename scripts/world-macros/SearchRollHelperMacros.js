@@ -1,4 +1,13 @@
-await (async () => {
+export async function runSearchRoll({
+    actor = null,
+    token = null,
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    debug = false,
+    resultBox = null,
+} = {}) {
     "use strict";
 
     const MODULE_ID =
@@ -1006,4 +1015,4 @@ await (async () => {
 
         console.groupEnd();
     }
-})();
+}

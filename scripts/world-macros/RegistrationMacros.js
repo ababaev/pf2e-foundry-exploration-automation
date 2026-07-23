@@ -1,4 +1,10 @@
-"use strict";
+export async function registerTokenTrigger({
+    behavior = null,
+    token = null,
+    debug = false,
+    resultBox = null,
+} = {}) {
+    "use strict";
 
 /*
  * RegistrationMacros
@@ -231,4 +237,6 @@ try {
     globalThis.RegionAutomationRegistrationLocks.delete(
         raLockKey,
     );
+}
+
 }

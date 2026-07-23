@@ -1,4 +1,11 @@
-"use strict";
+export async function checkExplorationActivity({
+    token = null,
+    actor = null,
+    activity = "investigate",
+    debug = false,
+    resultBox = null,
+} = {}) {
+    "use strict";
 
 /*
  * Expected Macro.execute scope:
@@ -205,4 +212,6 @@ if (raDebug) {
         "Region Automation | Exploration activity check",
         raResult,
     );
+}
+
 }

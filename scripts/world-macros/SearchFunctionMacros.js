@@ -1,32 +1,27 @@
-await (async () => {
+import {
+    checkExplorationActivity,
+} from "./ExplorationActivityMacros.js";
+
+import {
+    registerTokenTrigger,
+} from "./RegistrationMacros.js";
+
+import {
+    runSearchRoll,
+} from "./SearchRollHelperMacros.js";
+
+export async function runSearch({
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    token = null,
+    actor = null,
+} = {}) {
     "use strict";
 
-    const MODULE_ID = "pf2e-exploration-automation";
-
-    const findSingleMacro = name => {
-        const matches =
-            game.macros.filter(
-                macro =>
-                    macro.name === name,
-            );
-
-        if (matches.length !== 1) {
-            console.error(
-                `Region Automation | Expected exactly one "${name}" macro`,
-                matches,
-            );
-
-            if (game.user.isGM) {
-                ui.notifications.error(
-                    `Region Automation: expected exactly one "${name}" macro, but found ${matches.length}.`,
-                );
-            }
-
-            return null;
-        }
-
-        return matches[0];
-    };
+    const MODULE_ID =
+        "pf2e-exploration-automation";
 
     const raEvent =
         typeof event !== "undefined"
@@ -171,37 +166,6 @@ await (async () => {
     }
 
     /*
-     * Resolve every required helper before registration.
-     * A missing helper must not consume the trigger.
-     */
-    const explorationMacro =
-        findSingleMacro(
-            "ExplorationActivityMacros",
-        );
-
-    if (!explorationMacro) {
-        return;
-    }
-
-    const registrationMacro =
-        findSingleMacro(
-            "RegistrationMacros",
-        );
-
-    if (!registrationMacro) {
-        return;
-    }
-
-    const rollHelperMacro =
-        findSingleMacro(
-            "SearchRollHelperMacros",
-        );
-
-    if (!rollHelperMacro) {
-        return;
-    }
-
-    /*
      * Step 1: Search exploration activity gate.
      */
     let explorationResult;
@@ -211,7 +175,7 @@ await (async () => {
             value: null,
         };
 
-        await explorationMacro.execute({
+        await checkExplorationActivity({
             token: raToken,
             actor: raActor,
             activity: "search",
@@ -269,7 +233,7 @@ await (async () => {
             value: null,
         };
 
-        await registrationMacro.execute({
+        await registerTokenTrigger({
             behavior: raBehavior,
             token: raToken,
             debug: true,
@@ -371,7 +335,7 @@ await (async () => {
             value: null,
         };
 
-        await rollHelperMacro.execute({
+        await runSearchRoll({
             actor: raActor,
             token: raToken,
             behavior: raBehavior,
@@ -422,4 +386,4 @@ await (async () => {
         "Region Automation | Search completed",
         rollResult,
     );
-})();
+}
