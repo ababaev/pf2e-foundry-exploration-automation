@@ -1,4 +1,8 @@
 import {
+    runInvestigate,
+} from "./world-macros/InvestigateFunctionMacros.js";
+
+import {
     runSearch,
 } from "./world-macros/SearchFunctionMacros.js";
 
@@ -58,6 +62,9 @@ export const FUNCTION_MACRO_NAMES =
  */
 const MODULE_FUNCTIONS =
     Object.freeze({
+        investigate:
+            runInvestigate,
+
         search:
             runSearch,
     });

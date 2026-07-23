@@ -1,6 +1,16 @@
-await (async () => {
+export async function runInvestigateRoll({
+    actor = null,
+    token = null,
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    debug = false,
+    resultBox = null,
+} = {}) {
 
-    const MODULE_ID = "pf2e-exploration-automation";
+    const MODULE_ID =
+        "pf2e-exploration-automation";
 
     /*
      * Normally leave this as null.
@@ -988,4 +998,4 @@ await (async () => {
 
         console.groupEnd();
     }
-})();
+}

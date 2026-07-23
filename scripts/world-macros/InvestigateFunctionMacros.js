@@ -1,48 +1,43 @@
-(async () => {
+import {
+    checkExplorationActivity,
+} from "./ExplorationActivityMacros.js";
 
-    const MODULE_ID = "pf2e-exploration-automation";
+import {
+    registerTokenTrigger,
+} from "./RegistrationMacros.js";
 
-    const findSingleMacro = name => {
-        const matches = game.macros.filter(
-            macro => macro.name === name,
-        );
+import {
+    runInvestigateRoll,
+} from "./InvestigateRollHelperMacros.js";
 
-        if (matches.length !== 1) {
-            console.error(
-                `Region Automation | Expected exactly one "${name}" macro`,
-                matches,
-            );
+export async function runInvestigate({
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    token = null,
+    actor = null,
+} = {}) {
 
-            if (game.user.isGM) {
-                ui.notifications.error(
-                    `Region Automation: expected exactly one "${name}" macro, but found ${matches.length}.`,
-                );
-            }
+    const MODULE_ID =
+        "pf2e-exploration-automation";
 
-            return null;
-        }
-
-        return matches[0];
-    };
-
-    /*
-     * Resolve the variables passed by the Region Behavior.
-     *
-     * Do not redeclare event, behavior, region, scene, token, or actor
-     * using those exact names because they are supplied in Macro scope.
-     */
     const raEvent =
         typeof event !== "undefined"
             ? event
             : null;
 
-    const raPassedRegion =
-        typeof region !== "undefined"
-            ? region
+    const raBehavior =
+        typeof behavior !== "undefined"
+            ? behavior
             : null;
 
     const raRegion =
-        raPassedRegion ??
+        (
+            typeof region !== "undefined"
+                ? region
+                : null
+        ) ??
         raEvent?.region ??
         null;
 
@@ -72,40 +67,41 @@
                 : null
         );
 
-    const raPassedBehavior =
-        typeof behavior !== "undefined"
-            ? behavior
-            : null;
-
-    const raBehavior =
-        raPassedBehavior ??
-        Array.from(
-            raRegion?.behaviors ?? [],
-        ).find(candidate =>
-            candidate.flags?.[MODULE_ID]
-                ?.functionality === "investigate"
-        ) ??
-        null;
-
     console.log(
         "Region Automation | Investigation started",
         {
-            event: raEvent,
-            behavior: raBehavior,
-            region: raRegion,
-            scene: raScene,
-            token: raToken,
-            actor: raActor,
-            executingUser: game.user,
+            event:
+                raEvent,
+
+            behavior:
+                raBehavior,
+
+            region:
+                raRegion,
+
+            scene:
+                raScene,
+
+            token:
+                raToken,
+
+            actor:
+                raActor,
+
+            executingUser:
+                game.user,
         },
     );
 
     /*
-     * This workflow responds only to Token Enters.
+     * Investigation responds only to tokenEnter.
      */
-    if (raEvent?.name !== "tokenEnter") {
+    if (
+        raEvent?.name !==
+        "tokenEnter"
+    ) {
         console.debug(
-            "Region Automation | Ignored Region event",
+            "Region Automation | Ignored Investigation event",
             raEvent?.name,
         );
 
@@ -122,12 +118,23 @@
         console.error(
             "Region Automation | Incomplete Investigation context",
             {
-                behavior: raBehavior,
-                event: raEvent,
-                region: raRegion,
-                scene: raScene,
-                token: raToken,
-                actor: raActor,
+                behavior:
+                    raBehavior,
+
+                event:
+                    raEvent,
+
+                region:
+                    raRegion,
+
+                scene:
+                    raScene,
+
+                token:
+                    raToken,
+
+                actor:
+                    raActor,
             },
         );
 
@@ -141,56 +148,59 @@
     }
 
     /*
-     * Resolve all helper macros before registering the token.
-     *
-     * A missing helper must not consume the Investigation.
-     */
-    const raExplorationMacro =
-        findSingleMacro(
-            "ExplorationActivityMacros",
-        );
-
-    if (!raExplorationMacro) {
-        return;
-    }
-
-    const raRegistrationMacro =
-        findSingleMacro(
-            "RegistrationMacros",
-        );
-
-    if (!raRegistrationMacro) {
-        return;
-    }
-
-    const raRollHelperMacro =
-        findSingleMacro(
-            "InvestigateRollHelperMacros",
-        );
-
-    if (!raRollHelperMacro) {
-        return;
-    }
-
-    /*
-     * Validate basic Behavior data before registration.
+     * Validate that the executor sent an Investigation Behavior.
      */
     const raStoredData =
-        raBehavior.flags?.[MODULE_ID] ?? {};
+        raBehavior.flags
+            ?.[MODULE_ID] ??
+        {};
+
+    if (
+        raStoredData.functionality !==
+        "investigate"
+    ) {
+        console.error(
+            "Region Automation | Investigation Behavior has the wrong functionality flag",
+            {
+                behavior:
+                    raBehavior,
+
+                functionality:
+                    raStoredData.functionality,
+            },
+        );
+
+        return;
+    }
 
     const raConfig =
-        raStoredData.config ?? {};
+        raStoredData.config ??
+        {};
 
     const raBaseDC =
-        Number(raConfig.baseDC);
+        Number(
+            raConfig.baseDC,
+        );
 
-    if (!Number.isFinite(raBaseDC)) {
+    if (
+        !Number.isFinite(
+            raBaseDC,
+        ) ||
+        !Number.isInteger(
+            raBaseDC,
+        )
+    ) {
         console.error(
             "Region Automation | Invalid Investigation base DC",
             {
-                baseDC: raConfig.baseDC,
-                config: raConfig,
-                behavior: raBehavior,
+                baseDC:
+                    raConfig.baseDC,
+
+                config:
+                    raConfig,
+
+                behavior:
+                    raBehavior,
             },
         );
 
@@ -204,34 +214,44 @@
     }
 
     /*
-     * Step 1: Exploration activity check.
+     * Step 1: Investigate exploration activity gate.
      */
     let raExplorationResult;
 
     try {
         const raResultBox = {
-            value: null,
+            value:
+                null,
         };
 
-        await raExplorationMacro.execute({
-            token: raToken,
-            actor: raActor,
-            activity: "investigate",
-            debug: true,
-            resultBox: raResultBox,
+        await checkExplorationActivity({
+            token:
+                raToken,
+
+            actor:
+                raActor,
+
+            activity:
+                "investigate",
+
+            debug:
+                true,
+
+            resultBox:
+                raResultBox,
         });
 
         raExplorationResult =
             raResultBox.value;
     } catch (error) {
         console.error(
-            "Region Automation | ExplorationActivityMacros failed",
+            "Region Automation | Investigation exploration activity check failed",
             error,
         );
 
         if (game.user.isGM) {
             ui.notifications.error(
-                "Region Automation: the exploration activity check failed. See the console.",
+                "Region Automation: the Investigation exploration activity check failed. See the console.",
             );
         }
 
@@ -240,7 +260,7 @@
 
     if (!raExplorationResult?.ok) {
         console.error(
-            "Region Automation | Exploration activity could not be checked",
+            "Region Automation | Investigation exploration activity could not be checked",
             raExplorationResult,
         );
 
@@ -262,33 +282,41 @@
     );
 
     /*
-     * Step 2: Register the token.
+     * Step 2: Register this token for this specific Behavior.
      */
     let raRegistrationResult;
 
     try {
         const raResultBox = {
-            value: null,
+            value:
+                null,
         };
 
-        await raRegistrationMacro.execute({
-            behavior: raBehavior,
-            token: raToken,
-            debug: true,
-            resultBox: raResultBox,
+        await registerTokenTrigger({
+            behavior:
+                raBehavior,
+
+            token:
+                raToken,
+
+            debug:
+                true,
+
+            resultBox:
+                raResultBox,
         });
 
         raRegistrationResult =
             raResultBox.value;
     } catch (error) {
         console.error(
-            "Region Automation | RegistrationMacros failed",
+            "Region Automation | Investigation registration failed",
             error,
         );
 
         if (game.user.isGM) {
             ui.notifications.error(
-                "Region Automation: token registration failed. See the console.",
+                "Region Automation: Investigation registration failed. See the console.",
             );
         }
 
@@ -297,13 +325,13 @@
 
     if (!raRegistrationResult?.ok) {
         console.error(
-            "Region Automation | Token registration was unsuccessful",
+            "Region Automation | Investigation token registration was unsuccessful",
             raRegistrationResult,
         );
 
         if (game.user.isGM) {
             ui.notifications.error(
-                "Region Automation: the token could not be registered. See the console.",
+                "Region Automation: the Investigation token could not be registered.",
             );
         }
 
@@ -320,73 +348,93 @@
     }
 
     console.log(
-        `Region Automation | ${raToken.name} registered for the first time; continuing.`,
+        `Region Automation | ${raToken.name} registered for this Investigation; continuing.`,
         raRegistrationResult,
     );
 
     /*
-     * If rolling fails after registration, remove this token again.
+     * Rollback is only for technical failures.
+     *
+     * A failed Recall Knowledge check is a valid completed execution
+     * and must remain registered.
      */
-    const rollbackRegistration = async () => {
-        try {
-            const currentRegistrations =
-                raBehavior.flags?.[MODULE_ID]
-                    ?.triggeredTokenUuids;
+    const rollbackRegistration =
+        async () => {
+            try {
+                const currentRegistrations =
+                    raBehavior.flags
+                        ?.[MODULE_ID]
+                        ?.triggeredTokenUuids;
 
-            const updatedRegistrations =
-                Array.isArray(currentRegistrations)
-                    ? currentRegistrations.filter(
-                        uuid => uuid !== raToken.uuid,
+                const updatedRegistrations =
+                    Array.isArray(
+                        currentRegistrations,
                     )
-                    : [];
+                        ? currentRegistrations.filter(
+                            uuid =>
+                                uuid !==
+                                raToken.uuid,
+                        )
+                        : [];
 
-            await raBehavior.update({
-                [`flags.${MODULE_ID}.triggeredTokenUuids`]:
-                    updatedRegistrations,
-            });
+                await raBehavior.update({
+                    [`flags.${MODULE_ID}.triggeredTokenUuids`]:
+                        updatedRegistrations,
+                });
 
-            console.warn(
-                "Region Automation | Registration rolled back",
-                {
-                    tokenUuid: raToken.uuid,
-                    behaviorUuid: raBehavior.uuid,
-                },
-            );
-        } catch (rollbackError) {
-            console.error(
-                "Region Automation | Registration rollback failed",
-                rollbackError,
-            );
-        }
-    };
+                console.warn(
+                    "Region Automation | Investigation registration rolled back after technical failure",
+                    {
+                        tokenUuid:
+                            raToken.uuid,
+
+                        behaviorUuid:
+                            raBehavior.uuid,
+                    },
+                );
+            } catch (rollbackError) {
+                console.error(
+                    "Region Automation | Investigation registration rollback failed",
+                    rollbackError,
+                );
+            }
+        };
 
     /*
      * Step 3: Execute the Investigation roll helper.
-     *
-     * InvestigateRollHelperMacros is responsible for:
-     * - rolling one d20;
-     * - resolving all configured skills;
-     * - expanding every Lore;
-     * - calculating totals and DCs;
-     * - creating the secret GM chat card;
-     * - publishing its result through resultBox.
      */
     let raRollResult;
 
     try {
         const raResultBox = {
-            value: null,
+            value:
+                null,
         };
 
-        await raRollHelperMacro.execute({
-            actor: raActor,
-            token: raToken,
-            behavior: raBehavior,
-            event: raEvent,
-            region: raRegion,
-            scene: raScene,
-            debug: true,
-            resultBox: raResultBox,
+        await runInvestigateRoll({
+            actor:
+                raActor,
+
+            token:
+                raToken,
+
+            behavior:
+                raBehavior,
+
+            event:
+                raEvent,
+
+            region:
+                raRegion,
+
+            scene:
+                raScene,
+
+            debug:
+                true,
+
+            resultBox:
+                raResultBox,
         });
 
         raRollResult =
@@ -410,7 +458,7 @@
 
     if (!raRollResult?.ok) {
         console.error(
-            "Region Automation | Investigation roll was unsuccessful",
+            "Region Automation | Investigation automation was technically unsuccessful",
             raRollResult,
         );
 
@@ -418,7 +466,7 @@
 
         if (game.user.isGM) {
             ui.notifications.error(
-                "Region Automation: the Investigation roll was unsuccessful. Registration was rolled back. See the console.",
+                "Region Automation: Investigation could not complete. Registration was rolled back.",
             );
         }
 
@@ -429,4 +477,4 @@
         "Region Automation | Investigation completed",
         raRollResult,
     );
-})();
+}
