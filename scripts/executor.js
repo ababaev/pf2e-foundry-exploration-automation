@@ -1,3 +1,7 @@
+import {
+    runSearch,
+} from "./world-macros/SearchFunctionMacros.js";
+
 /**
  * Region Automation
  * scripts/executor.js
