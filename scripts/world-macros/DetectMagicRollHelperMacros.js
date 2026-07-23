@@ -2,7 +2,7 @@ await (async () => {
     "use strict";
 
     const MODULE_ID =
-        "region-automation";
+        "pf2e-exploration-automation";
 
     /*
      * Leave null during normal use.
@@ -601,7 +601,7 @@ await (async () => {
 
     const content = `
         <section
-            class="region-automation detect-magic-result"
+            class="pf2e-exploration-automation detect-magic-result"
         >
             <header
                 style="

@@ -2,7 +2,7 @@
     "use strict";
 
     const raModuleId =
-        "region-automation";
+        "pf2e-exploration-automation";
 
     if (!game.user.isGM) {
         ui.notifications.error(

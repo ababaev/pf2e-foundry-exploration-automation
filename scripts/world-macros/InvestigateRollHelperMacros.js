@@ -1,7 +1,7 @@
 await (async () => {
     "use strict";
 
-    const MODULE_ID = "region-automation";
+    const MODULE_ID = "pf2e-exploration-automation";
 
     /*
      * Normally leave this as null.
@@ -693,7 +693,7 @@ await (async () => {
      * Create secret GM chat output.
      */
     const raContent = `
-        <section class="region-automation investigate-result">
+        <section class="pf2e-exploration-automation investigate-result">
             <header style="
                 margin-bottom: 0.6rem;
             ">

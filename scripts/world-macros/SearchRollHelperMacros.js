@@ -2,7 +2,7 @@ await (async () => {
     "use strict";
 
     const MODULE_ID =
-        "region-automation";
+        "pf2e-exploration-automation";
 
     const TARGET_TYPES =
         Object.freeze({
@@ -162,9 +162,9 @@ await (async () => {
 
                     "target:distance:30",
 
-                    "region-automation",
-                    "region-automation:search",
-                    "region-automation:search:npc",
+                    "pf2e-exploration-automation",
+                    "pf2e-exploration-automation:search",
+                    "pf2e-exploration-automation:search:npc",
                 ];
             }
 
@@ -178,10 +178,10 @@ await (async () => {
 
                 "target:distance:30",
 
-                "region-automation",
-                "region-automation:search",
-                "region-automation:search:non-npc",
-                "region-automation:search:concealed-object",
+                "pf2e-exploration-automation",
+                "pf2e-exploration-automation:search",
+                "pf2e-exploration-automation:search:non-npc",
+                "pf2e-exploration-automation:search:concealed-object",
             ];
         };
 
@@ -685,7 +685,7 @@ await (async () => {
      */
     const content = `
         <section
-            class="region-automation search-result"
+            class="pf2e-exploration-automation search-result"
         >
             <header
                 style="

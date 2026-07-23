@@ -22,7 +22,7 @@
  * }
  */
 
-const raModuleId = "region-automation";
+const raModuleId = "pf2e-exploration-automation";
 
 const raResultBox =
     typeof resultBox !== "undefined" &&

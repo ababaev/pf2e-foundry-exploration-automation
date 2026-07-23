@@ -2,7 +2,7 @@ await (async () => {
     "use strict";
 
     const MODULE_ID =
-        "region-automation";
+        "pf2e-exploration-automation";
 
     const VALID_SAVE_TYPES =
         new Set([

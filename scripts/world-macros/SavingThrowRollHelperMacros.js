@@ -2,7 +2,7 @@ await (async () => {
     "use strict";
 
     const MODULE_ID =
-        "region-automation";
+        "pf2e-exploration-automation";
 
     const SAVE_LABELS = {
         fortitude: "Fortitude",
@@ -355,12 +355,12 @@ await (async () => {
                 subject,
 
             slug:
-                "region-automation-saving-throw",
+                "pf2e-exploration-automation-saving-throw",
 
             extraRollOptions: [
-                "region-automation",
-                "region-automation:saving-throw",
-                `region-automation:saving-throw:${saveType}`,
+                "pf2e-exploration-automation",
+                "pf2e-exploration-automation:saving-throw",
+                `pf2e-exploration-automation:saving-throw:${saveType}`,
             ],
         });
 
@@ -539,7 +539,7 @@ await (async () => {
      */
     const content = `
         <section
-            class="region-automation saving-throw-result"
+            class="pf2e-exploration-automation saving-throw-result"
         >
             <header
                 style="
