@@ -6,6 +6,10 @@ import {
     runSearch,
 } from "./world-macros/SearchFunctionMacros.js";
 
+import {
+    runDetectMagic,
+} from "./world-macros/DetectMagicFunctionMacros.js";
+
 /**
  * Region Automation
  * scripts/executor.js
@@ -67,6 +71,9 @@ const MODULE_FUNCTIONS =
 
         search:
             runSearch,
+
+        "detect-magic":
+            runDetectMagic,
     });
 
 /**

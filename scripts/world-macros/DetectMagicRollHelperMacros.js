@@ -1,4 +1,13 @@
-await (async () => {
+export async function runDetectMagicRoll({
+    actor = null,
+    token = null,
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    debug = false,
+    resultBox = null,
+} = {}) {
 
     const MODULE_ID =
         "pf2e-exploration-automation";
@@ -885,4 +894,4 @@ await (async () => {
 
         console.groupEnd();
     }
-})();
+}
