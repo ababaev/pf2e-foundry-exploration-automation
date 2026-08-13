@@ -1,824 +1,180 @@
-export async function runInvestigateRoll({
-    actor = null,
-    token = null,
-    behavior = null,
-    event = null,
-    region = null,
-    scene = null,
-    debug = false,
-    resultBox = null,
-} = {}) {
+import { escapeHTML } from "./shared/html.js";
+import { DIFFICULTIES, DC_ADJUSTMENTS, RANK_LETTERS, getDegreeOfSuccess, getResultStyle } from "./shared/checks.js";
+import { getActiveGMs } from "./shared/gm.js";
+import { MODULE_ID } from "../module-id.js";
 
-    const MODULE_ID =
-        "pf2e-exploration-automation";
+/*
+ * Normally leave this as null. Set it to 1 or 20 only when testing
+ * natural-roll behavior.
+ */
+const FORCED_NATURAL_ROLL = null;
 
-    /*
-     * Normally leave this as null.
-     * Set it to 1 or 20 only when testing natural-roll behavior.
-     */
-    const FORCED_NATURAL_ROLL = null;
+/**
+ * Resolve PF2e modifiers for one statistic (skill or lore), applying
+ * the Recall Knowledge roll options.
+ */
+function resolveStatistic(statistic, naturalRoll) {
+    const slug = statistic.slug;
+    const rollOptions = ["action:recall-knowledge", `action:recall-knowledge:${slug}`];
 
-    const DIFFICULTIES = [
-        "incredibly-easy",
-        "very-easy",
-        "easy",
-        "normal",
-        "hard",
-        "very-hard",
-        "incredibly-hard",
-    ];
+    const resolved = typeof statistic.withRollOptions === "function" ? statistic.withRollOptions({ extraRollOptions: rollOptions }) : statistic;
 
-    const DC_ADJUSTMENTS = {
-        "incredibly-easy": -10,
-        "very-easy": -5,
-        "easy": -2,
-        "normal": 0,
-        "hard": 2,
-        "very-hard": 5,
-        "incredibly-hard": 10,
+    const modifier = Number(resolved.check?.mod ?? resolved.mod ?? 0);
+    const rank = Number(resolved.rank ?? statistic.rank ?? 0);
+
+    return {
+        statistic: resolved,
+        slug,
+        label: resolved.label ?? statistic.label ?? slug,
+        modifier,
+        rank,
+        rankLetter: RANK_LETTERS[rank] ?? "U",
+        total: naturalRoll + modifier,
+        breakdown: resolved.check?.breakdown ?? "",
+        rollOptions,
     };
+}
 
-    const RANK_LETTERS = {
-        0: "U",
-        1: "T",
-        2: "E",
-        3: "M",
-        4: "L",
-    };
+/**
+ * Split the seven configured-difficulty skill columns into ordinary
+ * statistic rows (rolled against their assigned DC) and Lore
+ * placeholder references ("Specified Lore" / "Unspecified Lore" only
+ * carry a DC — the GM compares an actual Lore roll against them).
+ */
+function resolveConfiguredSkills(actor, baseDC, configuredSkills) {
+    const loreReferences = [];
+    const ordinaryRows = [];
+    const seenOrdinary = new Set();
+    const seenLoreReferences = new Set();
 
-    /*
-     * Read values supplied through Macro.execute().
-     */
-    const raResultBox =
-        typeof resultBox !== "undefined" &&
-        resultBox &&
-        typeof resultBox === "object"
-            ? resultBox
-            : null;
+    for (const difficulty of DIFFICULTIES) {
+        const entries = Array.isArray(configuredSkills[difficulty]) ? configuredSkills[difficulty] : [];
+        const dc = baseDC + DC_ADJUSTMENTS[difficulty];
 
-    const raActor =
-        typeof actor !== "undefined"
-            ? actor
-            : null;
-
-    const raInputToken =
-        typeof token !== "undefined"
-            ? token
-            : null;
-
-    const raToken =
-        raInputToken?.document ??
-        raInputToken ??
-        null;
-
-    const raBehavior =
-        typeof behavior !== "undefined"
-            ? behavior
-            : null;
-
-    const raEvent =
-        typeof event !== "undefined"
-            ? event
-            : null;
-
-    const raRegion =
-        typeof region !== "undefined"
-            ? region
-            : null;
-
-    const raScene =
-        typeof scene !== "undefined"
-            ? scene
-            : null;
-
-    const raDebug =
-        typeof debug !== "undefined"
-            ? Boolean(debug)
-            : false;
-
-    const publishResult = value => {
-        if (raResultBox) {
-            raResultBox.value = value;
-        }
-
-        return value;
-    };
-
-    const escapeHTML = value =>
-        String(value ?? "").replace(
-            /[&<>"']/g,
-            character =>
-                ({
-                    "&": "&amp;",
-                    "<": "&lt;",
-                    ">": "&gt;",
-                    '"': "&quot;",
-                    "'": "&#039;",
-                })[character],
-        );
-
-    const getDegreeOfSuccess = (
-        total,
-        dc,
-        naturalRoll,
-    ) => {
-        let degree;
-
-        if (total >= dc + 10) {
-            degree = 3;
-        } else if (total >= dc) {
-            degree = 2;
-        } else if (total <= dc - 10) {
-            degree = 0;
-        } else {
-            degree = 1;
-        }
-
-        if (naturalRoll === 20) {
-            degree = Math.min(
-                3,
-                degree + 1,
-            );
-        } else if (naturalRoll === 1) {
-            degree = Math.max(
-                0,
-                degree - 1,
-            );
-        }
-
-        return [
-            "criticalFailure",
-            "failure",
-            "success",
-            "criticalSuccess",
-        ][degree];
-    };
-
-    const getResultStyle = degree => {
-        switch (degree) {
-            case "criticalSuccess":
-                return [
-                    "color: #198754",
-                    "font-weight: 700",
-                ].join(";");
-
-            case "success":
-                return [
-                    "color: #2563eb",
-                    "font-weight: 700",
-                ].join(";");
-
-            case "criticalFailure":
-                return [
-                    "color: #b91c1c",
-                    "font-weight: 700",
-                ].join(";");
-
-            default:
-                return "";
-        }
-    };
-
-    /*
-     * Validate execution context.
-     */
-    if (
-        !raActor ||
-        !raToken ||
-        !raBehavior
-    ) {
-        const result = {
-            ok: false,
-            reason: "incomplete-context",
-            actor: raActor,
-            token: raToken,
-            behavior: raBehavior,
-        };
-
-        publishResult(result);
-
-        console.error(
-            "Region Automation | Investigation roll helper received incomplete context",
-            result,
-        );
-
-        return;
-    }
-
-    /*
-     * Read Region Behavior configuration.
-     */
-    const raStoredData =
-        raBehavior.flags?.[MODULE_ID] ?? {};
-
-    const raConfig =
-        raStoredData.config ?? {};
-
-    const raBaseDC =
-        Number(raConfig.baseDC);
-
-    if (!Number.isFinite(raBaseDC)) {
-        const result = {
-            ok: false,
-            reason: "invalid-base-dc",
-            baseDC: raConfig.baseDC,
-        };
-
-        publishResult(result);
-
-        console.error(
-            "Region Automation | Invalid Investigation base DC",
-            result,
-        );
-
-        return;
-    }
-
-    const raConfiguredSkills =
-        raConfig.skills ?? {};
-
-    /*
-     * Generic Lore entries become DC reference rows.
-     *
-     * They do not receive rolls or degrees of success.
-     */
-    const raLoreReferences = [];
-
-    /*
-     * Ordinary configured skills are rolled against their assigned DC.
-     */
-    const raOrdinaryStatisticRows = [];
-
-    const raSeenOrdinarySkills =
-        new Set();
-
-    const raSeenLoreReferences =
-        new Set();
-
-    for (const raDifficulty of DIFFICULTIES) {
-        const raEntries =
-            Array.isArray(
-                raConfiguredSkills[raDifficulty],
-            )
-                ? raConfiguredSkills[raDifficulty]
-                : [];
-
-        const raDC =
-            raBaseDC +
-            DC_ADJUSTMENTS[raDifficulty];
-
-        for (const raConfiguredSlug of raEntries) {
-            if (
-                raConfiguredSlug ===
-                "specified-lore"
-            ) {
-                if (
-                    !raSeenLoreReferences.has(
-                        "specified-lore",
-                    )
-                ) {
-                    raSeenLoreReferences.add(
-                        "specified-lore",
-                    );
-
-                    raLoreReferences.push({
-                        slug:
-                            "specified-lore",
-
-                        label:
-                            "Specified Lore",
-
-                        difficulty:
-                            raDifficulty,
-
-                        dc:
-                            raDC,
+        for (const slug of entries) {
+            if (slug === "specified-lore" || slug === "unspecified-lore") {
+                if (!seenLoreReferences.has(slug)) {
+                    seenLoreReferences.add(slug);
+                    loreReferences.push({
+                        slug,
+                        label: slug === "specified-lore" ? "Specified Lore" : "Unspecified Lore",
+                        difficulty,
+                        dc,
                     });
                 }
 
                 continue;
             }
 
-            if (
-                raConfiguredSlug ===
-                "unspecified-lore"
-            ) {
-                if (
-                    !raSeenLoreReferences.has(
-                        "unspecified-lore",
-                    )
-                ) {
-                    raSeenLoreReferences.add(
-                        "unspecified-lore",
-                    );
-
-                    raLoreReferences.push({
-                        slug:
-                            "unspecified-lore",
-
-                        label:
-                            "Unspecified Lore",
-
-                        difficulty:
-                            raDifficulty,
-
-                        dc:
-                            raDC,
-                    });
-                }
-
+            if (seenOrdinary.has(slug)) {
+                console.warn(`Region Automation | Duplicate configured skill ignored: ${slug}`);
                 continue;
             }
 
-            if (
-                raSeenOrdinarySkills.has(
-                    raConfiguredSlug,
-                )
-            ) {
-                console.warn(
-                    `Region Automation | Duplicate configured skill ignored: ${raConfiguredSlug}`,
-                );
+            seenOrdinary.add(slug);
 
+            const statistic = actor.getStatistic?.(slug) ?? actor.skills?.[slug] ?? null;
+
+            if (!statistic) {
+                console.warn(`Region Automation | Actor statistic not found: ${slug}`);
                 continue;
             }
 
-            raSeenOrdinarySkills.add(
-                raConfiguredSlug,
-            );
-
-            const raStatistic =
-                raActor.getStatistic?.(
-                    raConfiguredSlug,
-                ) ??
-                raActor.skills?.[
-                    raConfiguredSlug
-                ] ??
-                null;
-
-            if (!raStatistic) {
-                console.warn(
-                    `Region Automation | Actor statistic not found: ${raConfiguredSlug}`,
-                );
-
-                continue;
-            }
-
-            raOrdinaryStatisticRows.push({
-                statistic:
-                    raStatistic,
-
-                difficulty:
-                    raDifficulty,
-
-                dc:
-                    raDC,
-            });
+            ordinaryRows.push({ statistic, difficulty, dc });
         }
     }
 
-    /*
-     * Every actual Lore statistic is rolled once.
-     *
-     * It is not assigned to either Specified Lore or Unspecified Lore.
-     * The GM compares the Lore total manually against the reference DCs.
-     */
-    const raLoreStatistics =
-        raLoreReferences.length > 0
-            ? Object.values(
-                raActor.skills ?? {},
-            )
-                .filter(
-                    statistic =>
-                        statistic?.lore === true,
-                )
-                .sort((left, right) =>
-                    String(
-                        left.label ??
-                        left.slug,
-                    ).localeCompare(
-                        String(
-                            right.label ??
-                            right.slug,
-                        ),
-                    ),
-                )
-            : [];
+    return { loreReferences, ordinaryRows };
+}
 
-    if (
-        raOrdinaryStatisticRows.length === 0 &&
-        raLoreReferences.length === 0
-    ) {
-        const result = {
-            ok: false,
-            reason: "no-configured-statistics",
-            config: raConfig,
-        };
+function statisticRowHTML(label, rankLetter, style, total, extra = "") {
+    return `
+        <tr>
+            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
+                ${escapeHTML(label)} (${escapeHTML(rankLetter)})
+            </td>
+            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); ${style}">
+                ${escapeHTML(total)}${extra}
+            </td>
+        </tr>
+    `;
+}
 
-        publishResult(result);
-
-        console.warn(
-            "Region Automation | Investigation contains no configured statistics",
-            result,
-        );
-
-        return;
-    }
+function buildContent({ subject, naturalRoll, ordinaryResults, loreReferences, loreResults, hint }) {
+    const ordinaryRowsHTML = ordinaryResults
+        .map(result => statisticRowHTML(result.label, result.rankLetter, getResultStyle(result.degree), result.total, ` vs DC ${escapeHTML(result.dc)}`))
+        .join("");
 
     /*
-     * Roll exactly one d20.
-     */
-    let raD20Roll = null;
-    let raNaturalRoll;
-
-    if (
-        Number.isInteger(
-            FORCED_NATURAL_ROLL,
-        ) &&
-        FORCED_NATURAL_ROLL >= 1 &&
-        FORCED_NATURAL_ROLL <= 20
-    ) {
-        raNaturalRoll =
-            FORCED_NATURAL_ROLL;
-    } else {
-        raD20Roll =
-            await new Roll(
-                "1d20",
-            ).evaluate();
-
-        raNaturalRoll =
-            Number(
-                raD20Roll.total,
-            );
-    }
-
-    /*
-     * Resolve PF2e modifiers for one statistic.
-     */
-    const resolveStatistic = statistic => {
-        const statisticSlug =
-            statistic.slug;
-
-        const rollOptions = [
-            "action:recall-knowledge",
-            `action:recall-knowledge:${statisticSlug}`,
-        ];
-
-        const resolvedStatistic =
-            typeof statistic.withRollOptions ===
-                "function"
-                ? statistic.withRollOptions({
-                    extraRollOptions:
-                        rollOptions,
-                })
-                : statistic;
-
-        const modifier =
-            Number(
-                resolvedStatistic.check?.mod ??
-                resolvedStatistic.mod ??
-                0,
-            );
-
-        const rank =
-            Number(
-                resolvedStatistic.rank ??
-                statistic.rank ??
-                0,
-            );
-
-        return {
-            statistic:
-                resolvedStatistic,
-
-            slug:
-                statisticSlug,
-
-            label:
-                resolvedStatistic.label ??
-                statistic.label ??
-                statisticSlug,
-
-            modifier,
-
-            rank,
-
-            rankLetter:
-                RANK_LETTERS[rank] ??
-                "U",
-
-            total:
-                raNaturalRoll +
-                modifier,
-
-            breakdown:
-                resolvedStatistic
-                    .check?.breakdown ??
-                "",
-
-            rollOptions,
-        };
-    };
-
-    /*
-     * Resolve ordinary skill results.
-     */
-    const raOrdinaryResults =
-        raOrdinaryStatisticRows.map(row => {
-            const resolved =
-                resolveStatistic(
-                    row.statistic,
-                );
-
-            const degree =
-                getDegreeOfSuccess(
-                    resolved.total,
-                    row.dc,
-                    raNaturalRoll,
-                );
-
-            return {
-                type:
-                    "ordinary",
-
-                ...resolved,
-
-                dc:
-                    row.dc,
-
-                difficulty:
-                    row.difficulty,
-
-                degree,
-            };
-        });
-
-    /*
-     * Resolve each actual Lore once, without assigning a DC.
-     */
-    const raLoreResults =
-        raLoreStatistics.map(statistic => {
-            const resolved =
-                resolveStatistic(
-                    statistic,
-                );
-
-            return {
-                type:
-                    "lore",
-
-                ...resolved,
-
-                dc:
-                    null,
-
-                difficulty:
-                    null,
-
-                degree:
-                    null,
-            };
-        });
-
-    /*
-     * Build ordinary skill table rows.
-     */
-    const raOrdinaryResultRowsHTML =
-        raOrdinaryResults.map(result => `
-            <tr>
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                ">
-                    ${escapeHTML(
-                        result.label,
-                    )}
-                    (${escapeHTML(
-                        result.rankLetter,
-                    )})
-                </td>
-
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                    ${getResultStyle(
-                        result.degree,
-                    )}
-                ">
-                    ${escapeHTML(
-                        result.total,
-                    )}
-                    vs DC
-                    ${escapeHTML(
-                        result.dc,
-                    )}
-                </td>
-            </tr>
-        `).join("");
-
-    /*
-     * Build one combined Lore table:
+     * One combined Lore table:
      *
      * Specified Lore      DC 15
      * Unspecified Lore    DC 18
      * Circus Lore (T)     10
      * Warfare Lore (E)    14
      */
-    const raLoreRowsHTML = [
-        ...raLoreReferences.map(reference => `
-            <tr>
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                    font-weight: 700;
-                ">
-                    ${escapeHTML(
-                        reference.label,
-                    )}
-                </td>
-
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                    font-weight: 700;
-                ">
-                    DC ${escapeHTML(
-                        reference.dc,
-                    )}
-                </td>
-            </tr>
-        `),
-
-        ...raLoreResults.map(result => `
-            <tr>
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                ">
-                    ${escapeHTML(
-                        result.label,
-                    )}
-                    (${escapeHTML(
-                        result.rankLetter,
-                    )})
-                </td>
-
-                <td style="
-                    padding: 0.3rem 0.4rem;
-                    border-bottom: 1px solid var(--color-border-light-primary);
-                    font-weight: 600;
-                ">
-                    ${escapeHTML(
-                        result.total,
-                    )}
-                </td>
-            </tr>
-        `),
+    const loreRowsHTML = [
+        ...loreReferences.map(
+            reference => `
+                <tr>
+                    <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-weight: 700;">
+                        ${escapeHTML(reference.label)}
+                    </td>
+                    <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-weight: 700;">
+                        DC ${escapeHTML(reference.dc)}
+                    </td>
+                </tr>
+            `,
+        ),
+        ...loreResults.map(result => statisticRowHTML(result.label, result.rankLetter, "font-weight: 600;", result.total)),
     ].join("");
 
-    const raActiveGMs =
-        game.users.filter(
-            user =>
-                user.active &&
-                user.isGM,
-        );
-
-    if (raActiveGMs.length === 0) {
-        const result = {
-            ok: false,
-            reason: "no-active-gm",
-        };
-
-        publishResult(result);
-
-        console.error(
-            "Region Automation | No active GM can receive the Investigation result",
-            result,
-        );
-
-        return;
-    }
-
-    /*
-     * Create secret GM chat output.
-     */
-    const raContent = `
+    return `
         <section class="pf2e-exploration-automation investigate-result">
-            <header style="
-                margin-bottom: 0.6rem;
-            ">
-                <strong>
-                    ${escapeHTML(
-                        raConfig.subject ??
-                        "Investigation",
-                    )}
-                </strong>
+            <header style="margin-bottom: 0.6rem;">
+                <strong>${escapeHTML(subject ?? "Investigation")}</strong>
             </header>
 
-            <p style="
-                margin: 0 0 0.6rem;
-            ">
-                Natural roll:
-                <strong>
-                    ${escapeHTML(
-                        raNaturalRoll,
-                    )}
-                </strong>
-
-                ${
-                    FORCED_NATURAL_ROLL !== null
-                        ? "<em> (forced test value)</em>"
-                        : ""
-                }
+            <p style="margin: 0 0 0.6rem;">
+                Natural roll: <strong>${escapeHTML(naturalRoll)}</strong>
+                ${FORCED_NATURAL_ROLL !== null ? "<em> (forced test value)</em>" : ""}
             </p>
 
             ${
-                raOrdinaryResults.length > 0
+                ordinaryResults.length > 0
                     ? `
-                        <h4 style="
-                            margin: 0.7rem 0 0.3rem;
-                        ">
-                            Skill Results
-                        </h4>
-
-                        <table style="
-                            width: 100%;
-                            border-collapse: collapse;
-                        ">
+                        <h4 style="margin: 0.7rem 0 0.3rem;">Skill Results</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr>
-                                    <th style="
-                                        text-align: left;
-                                        padding: 0.3rem 0.4rem;
-                                        border-bottom: 1px solid var(--color-border-dark);
-                                    ">
-                                        Statistic
-                                    </th>
-
-                                    <th style="
-                                        text-align: left;
-                                        padding: 0.3rem 0.4rem;
-                                        border-bottom: 1px solid var(--color-border-dark);
-                                    ">
-                                        Result
-                                    </th>
+                                    <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">Statistic</th>
+                                    <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">Result</th>
                                 </tr>
                             </thead>
-
-                            <tbody>
-                                ${raOrdinaryResultRowsHTML}
-                            </tbody>
+                            <tbody>${ordinaryRowsHTML}</tbody>
                         </table>
                     `
                     : ""
             }
 
             ${
-                raLoreReferences.length > 0
+                loreReferences.length > 0
                     ? `
-                        <h4 style="
-                            margin: 0.7rem 0 0.3rem;
-                        ">
-                            Lore
-                        </h4>
-
-                        <table style="
-                            width: 100%;
-                            border-collapse: collapse;
-                        ">
+                        <h4 style="margin: 0.7rem 0 0.3rem;">Lore</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr>
-                                    <th style="
-                                        text-align: left;
-                                        padding: 0.3rem 0.4rem;
-                                        border-bottom: 1px solid var(--color-border-dark);
-                                    ">
-                                        Statistic
-                                    </th>
-
-                                    <th style="
-                                        text-align: left;
-                                        padding: 0.3rem 0.4rem;
-                                        border-bottom: 1px solid var(--color-border-dark);
-                                    ">
-                                        DC / Result
-                                    </th>
+                                    <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">Statistic</th>
+                                    <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">DC / Result</th>
                                 </tr>
                             </thead>
-
                             <tbody>
-                                ${raLoreRowsHTML}
-
+                                ${loreRowsHTML}
                                 ${
-                                    raLoreResults.length === 0
+                                    loreResults.length === 0
                                         ? `
                                             <tr>
-                                                <td
-                                                    colspan="2"
-                                                    style="
-                                                        padding: 0.4rem;
-                                                        font-style: italic;
-                                                    "
-                                                >
+                                                <td colspan="2" style="padding: 0.4rem; font-style: italic;">
                                                     This actor has no Lore skills.
                                                 </td>
                                             </tr>
@@ -831,171 +187,146 @@ export async function runInvestigateRoll({
                     : ""
             }
 
-            ${
-                raConfig.hint
-                    ? `
-                        <p style="
-                            margin-top: 0.7rem;
-                            font-style: italic;
-                        ">
-                            ${escapeHTML(
-                                raConfig.hint,
-                            )}
-                        </p>
-                    `
-                    : ""
-            }
+            ${hint ? `<p style="margin-top: 0.7rem; font-style: italic;">${escapeHTML(hint)}</p>` : ""}
         </section>
     `;
+}
 
-    const raMessage =
-        await ChatMessage.create({
-            author:
-                game.user.id,
+export async function runInvestigateRoll({ actor = null, token = null, behavior = null, event = null, region = null, scene = null, debug = true } = {}) {
+    const tokenDocument = token?.document ?? token ?? null;
 
-            speaker: {
-                alias:
-                    raActor.name ??
-                    raToken.name ??
-                    "Investigation",
-            },
+    if (!actor || !tokenDocument || !behavior) {
+        const result = { ok: false, reason: "incomplete-context", actor, token: tokenDocument, behavior };
+        console.error("Region Automation | Investigation roll helper received incomplete context", result);
+        return result;
+    }
 
-            whisper:
-                raActiveGMs.map(
-                    user => user.id,
-                ),
+    const config = behavior.flags?.[MODULE_ID]?.config ?? {};
+    const baseDC = Number(config.baseDC);
 
-            content:
-                raContent,
-        });
+    if (!Number.isFinite(baseDC)) {
+        const result = { ok: false, reason: "invalid-base-dc", baseDC: config.baseDC };
+        console.error("Region Automation | Invalid Investigation base DC", result);
+        return result;
+    }
+
+    const { loreReferences, ordinaryRows } = resolveConfiguredSkills(actor, baseDC, config.skills ?? {});
+
+    if (ordinaryRows.length === 0 && loreReferences.length === 0) {
+        const result = { ok: false, reason: "no-configured-statistics", config };
+        console.warn("Region Automation | Investigation contains no configured statistics", result);
+        return result;
+    }
 
     /*
-     * Publish successful technical execution.
-     *
-     * Individual PF2e failures or critical failures are normal results and
-     * do not change this object's ok status.
+     * Every actual Lore statistic is rolled once. It is not assigned
+     * to either Specified Lore or Unspecified Lore — the GM compares
+     * the Lore total manually against the reference DCs.
+     */
+    const loreStatistics =
+        loreReferences.length > 0
+            ? Object.values(actor.skills ?? {})
+                  .filter(statistic => statistic?.lore === true)
+                  .sort((left, right) => String(left.label ?? left.slug).localeCompare(String(right.label ?? right.slug)))
+            : [];
+
+    /*
+     * Roll exactly one d20 and reuse it for every configured statistic.
+     */
+    let d20Roll = null;
+    let naturalRoll;
+
+    if (Number.isInteger(FORCED_NATURAL_ROLL) && FORCED_NATURAL_ROLL >= 1 && FORCED_NATURAL_ROLL <= 20) {
+        naturalRoll = FORCED_NATURAL_ROLL;
+    } else {
+        d20Roll = await new Roll("1d20").evaluate();
+        naturalRoll = Number(d20Roll.total);
+    }
+
+    const ordinaryResults = ordinaryRows.map(row => {
+        const resolved = resolveStatistic(row.statistic, naturalRoll);
+        const degree = getDegreeOfSuccess(resolved.total, row.dc, naturalRoll);
+        return { type: "ordinary", ...resolved, dc: row.dc, difficulty: row.difficulty, degree };
+    });
+
+    const loreResults = loreStatistics.map(statistic => {
+        const resolved = resolveStatistic(statistic, naturalRoll);
+        return { type: "lore", ...resolved, dc: null, difficulty: null, degree: null };
+    });
+
+    const activeGMs = getActiveGMs();
+
+    if (activeGMs.length === 0) {
+        const result = { ok: false, reason: "no-active-gm" };
+        console.error("Region Automation | No active GM can receive the Investigation result", result);
+        return result;
+    }
+
+    const message = await ChatMessage.create({
+        author: game.user.id,
+        speaker: { alias: actor.name ?? tokenDocument.name ?? "Investigation" },
+        whisper: activeGMs.map(user => user.id),
+        content: buildContent({
+            subject: config.subject,
+            naturalRoll,
+            ordinaryResults,
+            loreReferences,
+            loreResults,
+            hint: config.hint,
+        }),
+    });
+
+    /*
+     * Publish successful technical execution. Individual PF2e
+     * failures or critical failures are normal results and do not
+     * change this object's ok status.
      */
     const result = {
         ok: true,
         reason: "rolled",
-
-        naturalRoll:
-            raNaturalRoll,
-
-        roll:
-            raD20Roll,
-
-        loreReferences:
-            raLoreReferences,
-
-        ordinaryResults:
-            raOrdinaryResults,
-
-        loreResults:
-            raLoreResults,
-
-        message:
-            raMessage,
-
-        actorUuid:
-            raActor.uuid,
-
-        tokenUuid:
-            raToken.uuid,
-
-        behaviorUuid:
-            raBehavior.uuid,
-
-        regionUuid:
-            raRegion?.uuid ?? null,
-
-        sceneUuid:
-            raScene?.uuid ?? null,
-
-        eventName:
-            raEvent?.name ?? null,
+        naturalRoll,
+        roll: d20Roll,
+        loreReferences,
+        ordinaryResults,
+        loreResults,
+        message,
+        actorUuid: actor.uuid,
+        tokenUuid: tokenDocument.uuid,
+        behaviorUuid: behavior.uuid,
+        regionUuid: region?.uuid ?? null,
+        sceneUuid: scene?.uuid ?? null,
+        eventName: event?.name ?? null,
     };
 
-    publishResult(result);
-
-    if (raDebug) {
-        console.group(
-            `Region Automation | Investigation roll helper | ${raActor.name}`,
-        );
-
-        console.log(
-            "Natural d20",
-            raNaturalRoll,
-        );
-
+    if (debug) {
+        console.group(`Region Automation | Investigation roll helper | ${actor.name}`);
+        console.log("Natural d20", naturalRoll);
+        console.table(loreReferences.map(reference => ({ category: reference.label, dc: reference.dc, difficulty: reference.difficulty })));
         console.table(
-            raLoreReferences.map(reference => ({
-                category:
-                    reference.label,
-
-                dc:
-                    reference.dc,
-
-                difficulty:
-                    reference.difficulty,
+            ordinaryResults.map(result => ({
+                statistic: result.label,
+                rank: result.rankLetter,
+                modifier: result.modifier,
+                natural: naturalRoll,
+                total: result.total,
+                dc: result.dc,
+                degree: result.degree,
+                breakdown: result.breakdown,
             })),
         );
-
         console.table(
-            raOrdinaryResults.map(result => ({
-                statistic:
-                    result.label,
-
-                rank:
-                    result.rankLetter,
-
-                modifier:
-                    result.modifier,
-
-                natural:
-                    raNaturalRoll,
-
-                total:
-                    result.total,
-
-                dc:
-                    result.dc,
-
-                degree:
-                    result.degree,
-
-                breakdown:
-                    result.breakdown,
+            loreResults.map(result => ({
+                lore: result.label,
+                rank: result.rankLetter,
+                modifier: result.modifier,
+                natural: naturalRoll,
+                total: result.total,
+                breakdown: result.breakdown,
             })),
         );
-
-        console.table(
-            raLoreResults.map(result => ({
-                lore:
-                    result.label,
-
-                rank:
-                    result.rankLetter,
-
-                modifier:
-                    result.modifier,
-
-                natural:
-                    raNaturalRoll,
-
-                total:
-                    result.total,
-
-                breakdown:
-                    result.breakdown,
-            })),
-        );
-
-        console.log(
-            "Complete helper result",
-            result,
-        );
-
+        console.log("Complete helper result", result);
         console.groupEnd();
     }
+
+    return result;
 }
