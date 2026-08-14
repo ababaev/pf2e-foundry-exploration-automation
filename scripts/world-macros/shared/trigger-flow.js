@@ -1,0 +1,245 @@
+/**
+ * PF2e Exploration Automation
+ * scripts/world-macros/shared/trigger-flow.js
+ *
+ * The orchestration every ported activity's FunctionMacro repeats:
+ *
+ * 1. Resolve the tokenEnter event's region/scene/token/actor.
+ * 2. Confirm the Behavior carries this activity's functionality flag
+ *    and a valid config.
+ * 3. Gate on the actor currently performing the matching exploration
+ *    activity (checkExplorationActivity, a dual-purpose file also
+ *    used as a pasted world Macro by not-yet-ported activities).
+ * 4. One-shot register the token against this Behavior
+ *    (registerTokenTrigger, same dual-purpose caveat).
+ * 5. Run the activity's own secret check.
+ * 6. Roll back the registration on technical failure only — a failed
+ *    or critically failed check is a normal, successful run.
+ */
+
+import { MODULE_ID } from "../../module-id.js";
+import { checkExplorationActivity } from "../ExplorationActivityMacros.js";
+import { registerTokenTrigger } from "../RegistrationMacros.js";
+
+async function callWithResultBox(fn, args) {
+    const resultBox = { value: null };
+    await fn({ ...args, resultBox });
+    return resultBox.value;
+}
+
+async function rollBackTriggeredToken({ label, behavior, token }) {
+    try {
+        const current = behavior.flags?.[MODULE_ID]?.triggeredTokenUuids;
+        const updated = Array.isArray(current) ? current.filter(uuid => uuid !== token.uuid) : [];
+
+        await behavior.update({ [`flags.${MODULE_ID}.triggeredTokenUuids`]: updated });
+
+        console.warn(`Region Automation | ${label} registration rolled back after technical failure`, {
+            tokenUuid: token.uuid,
+            behaviorUuid: behavior.uuid,
+        });
+    } catch (rollbackError) {
+        console.error(`Region Automation | ${label} registration rollback failed`, rollbackError);
+    }
+}
+
+/**
+ * @param {string} label - Human-readable activity name for logs/notifications, e.g. "Search".
+ * @param {string} activity - Functionality flag and exploration-activity slug, e.g. "search".
+ * @param {object} behavior - RegionBehavior document.
+ * @param {object} event - Region event ({ name, data: { token }, ... }).
+ * @param {object} region - Region document (falls back to event.region).
+ * @param {object} scene - Scene document (falls back to region.parent / canvas.scene).
+ * @param {object} token - TokenDocument (falls back to event.data.token).
+ * @param {object} actor - Actor document (falls back to token.actor).
+ * @param {(config: object) => { ok: boolean }} validateConfig - Validates behavior.flags[MODULE_ID].config.
+ * @param {(context: { actor, token, behavior, event, region, scene }) => Promise<{ ok: boolean }>} runRoll
+ */
+export async function runTriggeredCheck({
+    label,
+    activity,
+    behavior = null,
+    event = null,
+    region = null,
+    scene = null,
+    token = null,
+    actor = null,
+    validateConfig,
+    runRoll,
+}) {
+    const resolvedRegion = region ?? event?.region ?? null;
+    const resolvedScene = scene ?? resolvedRegion?.parent ?? canvas?.scene ?? null;
+    const resolvedToken = event?.data?.token ?? token ?? null;
+    const resolvedActor = resolvedToken?.actor ?? actor ?? null;
+
+    console.log(`Region Automation | ${label} started`, {
+        event,
+        behavior,
+        region: resolvedRegion,
+        scene: resolvedScene,
+        token: resolvedToken,
+        actor: resolvedActor,
+        executingUser: game.user,
+    });
+
+    if (event?.name !== "tokenEnter") {
+        console.debug(`Region Automation | Ignored ${label} event`, event?.name);
+        return;
+    }
+
+    if (!behavior || !resolvedRegion || !resolvedScene || !resolvedToken || !resolvedActor) {
+        const context = {
+            behavior,
+            event,
+            region: resolvedRegion,
+            scene: resolvedScene,
+            token: resolvedToken,
+            actor: resolvedActor,
+        };
+
+        console.error(`Region Automation | Incomplete ${label} context`, context);
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: ${label} received incomplete context. See the console.`);
+        }
+
+        return;
+    }
+
+    const moduleData = behavior.flags?.[MODULE_ID] ?? {};
+
+    if (moduleData.functionality !== activity) {
+        console.error(`Region Automation | ${label} Behavior has the wrong functionality flag`, {
+            behavior,
+            functionality: moduleData.functionality,
+        });
+
+        return;
+    }
+
+    const config = moduleData.config ?? {};
+
+    if (!validateConfig(config)?.ok) {
+        console.error(`Region Automation | ${label} Behavior has invalid configuration`, { behavior, config });
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: this ${label} Behavior has invalid configuration.`);
+        }
+
+        return;
+    }
+
+    /*
+     * Step 1: exploration activity gate.
+     */
+    let explorationResult;
+
+    try {
+        explorationResult = await callWithResultBox(checkExplorationActivity, {
+            token: resolvedToken,
+            actor: resolvedActor,
+            activity,
+            debug: true,
+        });
+    } catch (error) {
+        console.error(`Region Automation | ${label} exploration activity check failed`, error);
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: the ${label} exploration activity check failed. See the console.`);
+        }
+
+        return;
+    }
+
+    if (!explorationResult?.ok) {
+        console.error(`Region Automation | ${label} exploration activity could not be checked`, explorationResult);
+        return;
+    }
+
+    if (!explorationResult.active) {
+        console.info(`Region Automation | ${resolvedActor.name} is not performing ${label}; execution stopped.`, explorationResult);
+        return;
+    }
+
+    console.log(`Region Automation | ${resolvedActor.name} is performing ${label}; continuing.`, explorationResult);
+
+    /*
+     * Step 2: one-shot register this token against this Behavior.
+     */
+    let registrationResult;
+
+    try {
+        registrationResult = await callWithResultBox(registerTokenTrigger, {
+            behavior,
+            token: resolvedToken,
+            debug: true,
+        });
+    } catch (error) {
+        console.error(`Region Automation | ${label} registration failed`, error);
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: ${label} registration failed. See the console.`);
+        }
+
+        return;
+    }
+
+    if (!registrationResult?.ok) {
+        console.error(`Region Automation | ${label} token registration was unsuccessful`, registrationResult);
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: the ${label} token could not be registered.`);
+        }
+
+        return;
+    }
+
+    if (!registrationResult.firstTrigger) {
+        console.info(
+            `Region Automation | ${resolvedToken.name} has already triggered this ${label}; execution stopped.`,
+            registrationResult,
+        );
+
+        return;
+    }
+
+    /*
+     * Step 3: the activity's own secret check.
+     */
+    let rollResult;
+
+    try {
+        rollResult = await runRoll({
+            actor: resolvedActor,
+            token: resolvedToken,
+            behavior,
+            event,
+            region: resolvedRegion,
+            scene: resolvedScene,
+        });
+    } catch (error) {
+        console.error(`Region Automation | ${label} roll helper failed`, error);
+
+        await rollBackTriggeredToken({ label, behavior, token: resolvedToken });
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: the ${label} roll helper failed. Registration was rolled back.`);
+        }
+
+        return;
+    }
+
+    if (!rollResult?.ok) {
+        console.error(`Region Automation | ${label} automation was technically unsuccessful`, rollResult);
+
+        await rollBackTriggeredToken({ label, behavior, token: resolvedToken });
+
+        if (game.user.isGM) {
+            ui.notifications.error(`Region Automation: ${label} could not complete. Registration was rolled back.`);
+        }
+
+        return;
+    }
+
+    console.log(`Region Automation | ${label} completed`, rollResult);
+}
