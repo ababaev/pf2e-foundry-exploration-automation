@@ -30,27 +30,28 @@ bundler/transpiler unless explicitly asked.
   `scripts/macro-sync.js`, `scripts/module-id.js` — the actual module code, loaded via `module.json`. Normal
   camelCase, standard JS module conventions, free to `import` from anywhere else in this population.
 - `scripts/world-macros/*.js` — source-of-truth copies of Foundry **world Macros**: scripts that get loaded
-  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Nine of them
-  (everything except `ExplorationActivityMacros.js`, see below) are looked up by name at runtime
-  (`game.macros.getName(...)`/`.find(...)`) — by `RegionAutomationMainMacros.js`, by
-  `SavingThrowFunctionMacros.js`, or by `executor.js`'s saving-throw fallback — so a matching `Macro` document
-  must exist in the world. A GM does **not** paste these in by hand: `scripts/macro-sync.js` creates/updates
-  them automatically as the primary GM reaches `ready`, fetching each one's live source straight from these
-  same files (see "World Macro provisioning" below). `ExplorationActivityMacros.js` is the one file in this
-  population not currently looked up by name by anything (Search/Investigate/DetectMagic import
-  `checkExplorationActivity` from it directly as an ES module instead) — kept in the same paste-compatible
-  style for consistency in case that changes, and deliberately excluded from `macro-sync.js`'s list until it
-  is.
+  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Six of them
+  (everything except `ExplorationActivityMacros.js` and `RegistrationMacros.js`, see below) are looked up by
+  name at runtime (`game.macros.getName(...)`/`.find(...)`) by `RegionAutomationMainMacros.js` — so a matching
+  `Macro` document must exist in the world. A GM does **not** paste these in by hand: `scripts/macro-sync.js`
+  creates/updates them automatically as the primary GM reaches `ready`, fetching each one's live source
+  straight from these same files (see "World Macro provisioning" below). `ExplorationActivityMacros.js` and
+  `RegistrationMacros.js` are the two files in this population not currently looked up by name by anything —
+  every activity now imports `checkExplorationActivity`/`registerTokenTrigger` from them directly as ES
+  modules instead (via `shared/trigger-flow.js`) — kept in the same paste-compatible style for consistency in
+  case a future activity needs to look one up by name again, and deliberately excluded from `macro-sync.js`'s
+  list until then (a top-level `export` — needed for the ES import — is invalid inside a Macro's command
+  body, so Foundry rejects the document if `macro-sync.js` tries to create/update it from either file).
 
   Every file in this population uses an `ra`-prefixed variable naming convention (`raBehavior`, `raToken`,
   `raResult`, ...) and `typeof x !== "undefined"` guards instead of relying on parameter defaults, because
   inside a `Macro`'s script body those names are Foundry-injected scope variables that may not exist at all —
   referencing an undeclared variable directly would throw. Preserve this whenever touching these files.
 
-  `Search`/`Investigate`/`DetectMagic`'s `*FunctionMacros.js` and `*RollHelperMacros.js` files, by contrast,
-  are **only** loaded as real ES modules (imported from `executor.js` / each other / `scripts/world-macros/shared/`)
-  — nothing looks them up by macro name anymore, so they are free to use normal parameter defaults, `import`,
-  and plain `return` instead of the `resultBox` sidecar pattern (see below).
+  Every activity's `*FunctionMacros.js` and `*RollHelperMacros.js` files, by contrast, are **only** loaded as
+  real ES modules (imported from `executor.js` / each other / `scripts/world-macros/shared/`) — nothing looks
+  them up by macro name anymore, so they are free to use normal parameter defaults, `import`, and plain
+  `return` instead of the `resultBox` sidecar pattern (see below).
 
 Whitespace style in the paste-only macro files (listed above) is unusually vertical (one value per line,
 e.g. `const x =\n    1;`) — match it there. The module-only files use conventional, denser formatting.
@@ -98,15 +99,14 @@ module API as `syncWorldMacros` for manual re-runs.
 ### Functionality dispatch and porting an activity
 
 `RegionBehavior.flags["pf2e-exploration-automation"].functionality` is one of `investigate`, `search`,
-`detect-magic`, `saving-throw` (`FUNCTION_MACRO_NAMES` / `SUPPORTED_FUNCTIONALITIES`). `investigate`,
-`search`, and `detect-magic` have been ported into the module proper (`MODULE_FUNCTIONS` in `executor.js`,
-backed by `world-macros/InvestigateFunctionMacros.js` / `SearchFunctionMacros.js` /
-`DetectMagicFunctionMacros.js`); `saving-throw` still falls back to
-`game.macros.getName(functionMacroName).execute(...)`, meaning a world Macro named
-`SavingThrowFunctionMacros` must exist in the target Foundry world.
+`detect-magic`, `saving-throw` (`FUNCTION_MACRO_NAMES` / `SUPPORTED_FUNCTIONALITIES`). All four have been
+ported into the module proper (`MODULE_FUNCTIONS` in `executor.js`, backed by
+`world-macros/InvestigateFunctionMacros.js` / `SearchFunctionMacros.js` / `DetectMagicFunctionMacros.js` /
+`SavingThrowFunctionMacros.js`). `FUNCTION_MACRO_NAMES` and `executor.js`'s `game.macros.getName(...)`
+fallback path are kept only for a future not-yet-ported activity (e.g. Avoid Notice) — currently every
+functionality resolves through `MODULE_FUNCTIONS` and the fallback is dead code.
 
-To port `saving-throw` (or any future activity), follow `SearchFunctionMacros.js` as the template — it's the
-thinnest of the three:
+To port a future activity, follow `SearchFunctionMacros.js` as the template — it's the thinnest:
 
 1. Convert `*FunctionMacros.js` from an IIFE to `export async function runX({ behavior, event, region,
    scene, token, actor } = {}) { await runTriggeredCheck({ label, activity, ...args, validateConfig,
@@ -115,7 +115,10 @@ thinnest of the three:
    returns `{ ok: boolean }` and should only check what's needed to safely register the token (full
    validation still belongs in the RollHelper too — see Search's DC-only pre-check vs. its DC+targetType
    RollHelper check for the intentional pattern of "cheap enough to check before burning a one-shot
-   registration").
+   registration"). Pass `requireExplorationActivity: false` if the trigger isn't tied to a PF2e exploration
+   activity a player selects (as Saving Throw does) — `runTriggeredCheck` skips the
+   `checkExplorationActivity` gate entirely in that case and registers/rolls unconditionally. `activity`
+   itself is still required either way: it must match the Behavior's own `functionality` flag.
 2. Convert `*RollHelperMacros.js` from an IIFE (which built its own `escapeHTML`/`RANK_LETTERS`/
    `getResultStyle`/`getDegreeOfSuccess`/`DIFFICULTIES`/`DC_ADJUSTMENTS` and used a `resultBox` sidecar) to
    `export async function runXRoll({ actor, token, behavior, event, region, scene, debug = true } = {})`
@@ -126,9 +129,9 @@ thinnest of the three:
    `moduleApi.requestBehaviorExecution(...)` dispatcher (copy it from `SearchConfigurationMacros.js`) so
    newly-created Behaviors get the socket-routed source immediately instead of relying on the
    `createRegionBehavior` migration hook to fix it up after the fact.
-5. `SavingThrowFunctionMacros.js` still looks up `RegistrationMacros` via `game.macros.getName(...)` today —
-   once ported it should `import { registerTokenTrigger } from "./RegistrationMacros.js"` instead (already
-   the case inside `trigger-flow.js`, so this happens automatically once step 1 is done).
+5. If the not-yet-ported `*FunctionMacros.js` looked up `RegistrationMacros` via `game.macros.getName(...)`,
+   drop that lookup — `shared/trigger-flow.js` already does `import { registerTokenTrigger } from
+   "../RegistrationMacros.js"`, so this happens automatically once step 1 is done.
 
 ### Shared helpers (`scripts/module-id.js`, `scripts/world-macros/shared/`)
 
@@ -144,9 +147,10 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   which gets its `outcome` from PF2e's native Seek action instead of computing it locally).
 - `shared/gm.js` — `getActiveGMs()`.
 - `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback orchestration
-  described above, parameterized by `label`/`activity`/`validateConfig`/`runRoll`. It imports
-  `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through the same
-  `resultBox` contract those two dual-purpose files still expose externally.
+  described above, parameterized by `label`/`activity`/`requireExplorationActivity`/`validateConfig`/`runRoll`
+  (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw). It imports `checkExplorationActivity` and
+  `registerTokenTrigger` directly and drives them through the same `resultBox` contract those two
+  paste-style files still expose internally.
 
 ### Per-activity macro triad
 
@@ -157,12 +161,13 @@ three-file shape in `scripts/world-macros/`:
   selected Region (invoked from `RegionAutomationMainMacros.js`'s "Add Automation" dialog, which picks the
   right Configuration macro by name via `findSingleMacro`). Always provisioned as a `Macro` document (via
   `macro-sync.js`), never an ES module, even once its activity is ported.
-- **`*FunctionMacros.js`** — orchestration run on `tokenEnter` (via the executor). For a ported activity
-  this is a thin wrapper around `runTriggeredCheck` (see above); for `saving-throw` it's still the full IIFE
-  looking up `RegistrationMacros`/`SavingThrowRollHelperMacros` by `game.macros.getName(...)`.
+- **`*FunctionMacros.js`** — orchestration run on `tokenEnter` (via the executor). A thin wrapper around
+  `runTriggeredCheck` (see above) for every currently supported activity; a not-yet-ported future activity
+  would instead be the full IIFE looking up `RegistrationMacros`/its RollHelper by `game.macros.getName(...)`
+  until it's ported.
 - **`*RollHelperMacros.js`** — performs the actual PF2e roll/check and message output.
 
-Shared helpers used by every triad regardless of porting status:
+Shared helpers used by every triad:
 - `ExplorationActivityMacros.js` (`checkExplorationActivity`) — checks whether an actor's `system.exploration`
   items include the requested activity slug.
 - `RegistrationMacros.js` (`registerTokenTrigger`) — the one-shot trigger tracking, stored in

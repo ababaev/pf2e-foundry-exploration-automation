@@ -8,10 +8,12 @@
  * 2. Confirm the Behavior carries this activity's functionality flag
  *    and a valid config.
  * 3. Gate on the actor currently performing the matching exploration
- *    activity (checkExplorationActivity, a dual-purpose file also
- *    used as a pasted world Macro by not-yet-ported activities).
+ *    activity (checkExplorationActivity). Skipped entirely when
+ *    requireExplorationActivity is false — Saving Throw (and other
+ *    Region triggers that aren't tied to a PF2e exploration activity
+ *    a player selects) fires regardless of what the actor is doing.
  * 4. One-shot register the token against this Behavior
- *    (registerTokenTrigger, same dual-purpose caveat).
+ *    (registerTokenTrigger).
  * 5. Run the activity's own secret check.
  * 6. Roll back the registration on technical failure only — a failed
  *    or critically failed check is a normal, successful run.
@@ -45,7 +47,8 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
 
 /**
  * @param {string} label - Human-readable activity name for logs/notifications, e.g. "Search".
- * @param {string} activity - Functionality flag and exploration-activity slug, e.g. "search".
+ * @param {string} activity - Functionality flag this Behavior's flags.functionality must match, e.g. "search". Also used as the exploration-activity slug for the checkExplorationActivity gate unless `requireExplorationActivity` is false.
+ * @param {boolean} [requireExplorationActivity] - Whether the actor must currently be performing the `activity` exploration activity. Defaults to true; pass false for triggers not tied to a selectable PF2e exploration activity (e.g. Saving Throw), which then fire regardless of what the actor is doing.
  * @param {object} behavior - RegionBehavior document.
  * @param {object} event - Region event ({ name, data: { token }, ... }).
  * @param {object} region - Region document (falls back to event.region).
@@ -58,6 +61,7 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
 export async function runTriggeredCheck({
     label,
     activity,
+    requireExplorationActivity = true,
     behavior = null,
     event = null,
     region = null,
@@ -130,38 +134,41 @@ export async function runTriggeredCheck({
     }
 
     /*
-     * Step 1: exploration activity gate.
+     * Step 1: exploration activity gate. Skipped when
+     * requireExplorationActivity is false.
      */
-    let explorationResult;
+    if (requireExplorationActivity) {
+        let explorationResult;
 
-    try {
-        explorationResult = await callWithResultBox(checkExplorationActivity, {
-            token: resolvedToken,
-            actor: resolvedActor,
-            activity,
-            debug: true,
-        });
-    } catch (error) {
-        console.error(`Region Automation | ${label} exploration activity check failed`, error);
+        try {
+            explorationResult = await callWithResultBox(checkExplorationActivity, {
+                token: resolvedToken,
+                actor: resolvedActor,
+                activity,
+                debug: true,
+            });
+        } catch (error) {
+            console.error(`Region Automation | ${label} exploration activity check failed`, error);
 
-        if (game.user.isGM) {
-            ui.notifications.error(`Region Automation: the ${label} exploration activity check failed. See the console.`);
+            if (game.user.isGM) {
+                ui.notifications.error(`Region Automation: the ${label} exploration activity check failed. See the console.`);
+            }
+
+            return;
         }
 
-        return;
-    }
+        if (!explorationResult?.ok) {
+            console.error(`Region Automation | ${label} exploration activity could not be checked`, explorationResult);
+            return;
+        }
 
-    if (!explorationResult?.ok) {
-        console.error(`Region Automation | ${label} exploration activity could not be checked`, explorationResult);
-        return;
-    }
+        if (!explorationResult.active) {
+            console.info(`Region Automation | ${resolvedActor.name} is not performing ${label}; execution stopped.`, explorationResult);
+            return;
+        }
 
-    if (!explorationResult.active) {
-        console.info(`Region Automation | ${resolvedActor.name} is not performing ${label}; execution stopped.`, explorationResult);
-        return;
+        console.log(`Region Automation | ${resolvedActor.name} is performing ${label}; continuing.`, explorationResult);
     }
-
-    console.log(`Region Automation | ${resolvedActor.name} is performing ${label}; continuing.`, explorationResult);
 
     /*
      * Step 2: one-shot register this token against this Behavior.

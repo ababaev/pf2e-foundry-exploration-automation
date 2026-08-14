@@ -26,10 +26,17 @@ const DEFAULT_ICON = "icons/svg/dice-target.svg";
  * Every world Macro this module provisions, and the world-macros/
  * source file it's kept in sync with.
  *
- * ExplorationActivityMacros.js is deliberately absent: nothing looks
- * it up by name today (Search/Investigate/DetectMagic import
- * checkExplorationActivity directly as an ES module), so it doesn't
- * need to exist as a Macro document. Add it here if that changes.
+ * ExplorationActivityMacros.js and RegistrationMacros.js are
+ * deliberately absent. Both files are `export async function ...`
+ * wrappers so shared/trigger-flow.js can import them directly
+ * (checkExplorationActivity, registerTokenTrigger) — and a top-level
+ * `export` is invalid inside a Macro's command body, so Foundry
+ * rejects it during validation. Now that every supported
+ * functionality (search/investigate/detect-magic/saving-throw) has
+ * been ported into the module, nothing looks either of them up by
+ * name anymore; add an entry back here only if a future *FunctionMacros.js
+ * reverts to looking one of them up via game.macros.getName(...)
+ * instead of importing it.
  */
 const MANAGED_MACROS = Object.freeze([
     {
@@ -57,18 +64,6 @@ const MANAGED_MACROS = Object.freeze([
     {
         name: "SavingThrowConfigurationMacros",
         file: "./world-macros/SavingThrowConfigurationMacros.js",
-    },
-    {
-        name: "SavingThrowFunctionMacros",
-        file: "./world-macros/SavingThrowFunctionMacros.js",
-    },
-    {
-        name: "SavingThrowRollHelperMacros",
-        file: "./world-macros/SavingThrowRollHelperMacros.js",
-    },
-    {
-        name: "RegistrationMacros",
-        file: "./world-macros/RegistrationMacros.js",
     },
 ]);
 

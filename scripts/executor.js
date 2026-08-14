@@ -13,15 +13,16 @@
  * 1. Resolves the RegionBehavior and Token from their UUIDs.
  * 2. Verifies that the request is legitimate.
  * 3. Determines which automation is configured.
- * 4. Executes the existing GM-owned function macro.
+ * 4. Executes the GM-owned function (MODULE_FUNCTIONS) or, for any
+ *    not-yet-ported functionality, its function macro by name.
  *
- * The existing function macros continue to call:
+ * Every currently supported functionality has been ported into the
+ * module (see MODULE_FUNCTIONS below), each ultimately calling
+ * RegistrationMacros (and, except Saving Throw, ExplorationActivityMacros)
+ * and its own RollHelper as plain ES imports through
+ * shared/trigger-flow.js.
  *
- * - RegistrationMacros;
- * - ExplorationActivityMacros;
- * - their corresponding RollHelper macro.
- *
- * Because this happens on the GM client, those macros can update the
+ * Because this happens on the GM client, those calls can update the
  * RegionBehavior and perform secret checks safely.
  */
 
@@ -29,6 +30,7 @@ import { MODULE_ID } from "./module-id.js";
 import { runInvestigate } from "./world-macros/InvestigateFunctionMacros.js";
 import { runSearch } from "./world-macros/SearchFunctionMacros.js";
 import { runDetectMagic } from "./world-macros/DetectMagicFunctionMacros.js";
+import { runSavingThrow } from "./world-macros/SavingThrowFunctionMacros.js";
 
 export { MODULE_ID };
 
@@ -52,6 +54,7 @@ const MODULE_FUNCTIONS = Object.freeze({
     investigate: runInvestigate,
     search: runSearch,
     "detect-magic": runDetectMagic,
+    "saving-throw": runSavingThrow,
 });
 
 /**
