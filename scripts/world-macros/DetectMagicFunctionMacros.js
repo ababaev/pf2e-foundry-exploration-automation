@@ -14,10 +14,11 @@ function validateConfig(config) {
     return { ok };
 }
 
-export async function runDetectMagic({ behavior = null, event = null, region = null, scene = null, token = null, actor = null } = {}) {
-    await runTriggeredCheck({
+export async function runDetectMagic({ behavior = null, event = null, region = null, scene = null, token = null, actor = null, skipRegistration = false } = {}) {
+    return runTriggeredCheck({
         label: "Detect Magic",
         activity: "detect-magic",
+        skipRegistration,
         behavior,
         event,
         region,

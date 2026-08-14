@@ -7,6 +7,7 @@ import { MODULE_ID } from "./module-id.js";
 import { getPrimaryGM, isPrimaryGM, registerSocket, requestBehaviorExecution } from "./socket.js";
 import { GENERIC_BEHAVIOR_SOURCE, migrateWorldBehaviors, normalizeBehaviorSource } from "./migrate-behaviors.js";
 import { syncWorldMacros } from "./macro-sync.js";
+import { triggerRegionAutomationForTokens } from "./manual-trigger.js";
 
 const AUTO_MIGRATE_BEHAVIORS = true;
 const AUTO_SYNC_MACROS = true;
@@ -33,6 +34,7 @@ function exposeApi() {
         migrateWorldBehaviors,
         normalizeBehaviorSource,
         syncWorldMacros,
+        triggerRegionAutomationForTokens,
         genericBehaviorSource: GENERIC_BEHAVIOR_SOURCE,
         getPrimaryGM,
         isPrimaryGM,

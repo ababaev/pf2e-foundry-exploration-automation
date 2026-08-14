@@ -50,6 +50,11 @@ const MANAGED_MACROS = Object.freeze([
         img: `modules/${MODULE_ID}/assets/icons/unregister-region.png`,
     },
     {
+        name: "TriggerRegionForPartyMacros",
+        file: "./world-macros/TriggerRegionForPartyMacros.js",
+        img: `modules/${MODULE_ID}/assets/icons/region-manual-automation-run.png`,
+    },
+    {
         name: "SearchConfigurationMacros",
         file: "./world-macros/SearchConfigurationMacros.js",
     },
@@ -132,7 +137,38 @@ async function syncOneMacro(entry, source, folder) {
 }
 
 /**
- * Create/update every managed macro from its source file.
+ * Delete any macro this module previously created (flags[MODULE_ID].managed
+ * === true) whose name is no longer in MANAGED_MACROS.
+ *
+ * Without this, a macro that's removed from MANAGED_MACROS (e.g. because
+ * its source file was converted from a pasted Macro to an ES-only module,
+ * as happened when Saving Throw was ported) is created once and then
+ * orphaned forever — syncWorldMacros only ever creates/updates entries in
+ * the table, it never notices an entry disappeared. Only touches macros
+ * carrying our own managed flag, so anything a GM created or renamed into
+ * the folder by hand is left alone.
+ */
+async function pruneOrphanedMacros() {
+    const managedNames = new Set(MANAGED_MACROS.map(entry => entry.name));
+
+    const orphaned = game.macros.filter(
+        macro => macro.type === "script" && macro.flags?.[MODULE_ID]?.managed === true && !managedNames.has(macro.name),
+    );
+
+    for (const macro of orphaned) {
+        try {
+            await macro.delete();
+        } catch (error) {
+            console.error(`Region Automation | Failed to delete orphaned macro "${macro.name}".`, error);
+        }
+    }
+
+    return orphaned.length;
+}
+
+/**
+ * Create/update every managed macro from its source file, and delete any
+ * previously-managed macro that's no longer in MANAGED_MACROS.
  *
  * This runs automatically for the primary GM when the world starts.
  * It may also be called manually through the module API.
@@ -145,6 +181,7 @@ export async function syncWorldMacros({ notify = false } = {}) {
             created: 0,
             updated: 0,
             unchanged: 0,
+            pruned: 0,
             failed: 0,
         };
 
@@ -152,7 +189,7 @@ export async function syncWorldMacros({ notify = false } = {}) {
         return summary;
     }
 
-    const summary = { ok: true, reason: "sync-complete", created: 0, updated: 0, unchanged: 0, failed: 0 };
+    const summary = { ok: true, reason: "sync-complete", created: 0, updated: 0, unchanged: 0, pruned: 0, failed: 0 };
     const folder = await ensureFolder();
 
     for (const entry of MANAGED_MACROS) {
@@ -169,16 +206,23 @@ export async function syncWorldMacros({ notify = false } = {}) {
         }
     }
 
+    try {
+        summary.pruned = await pruneOrphanedMacros();
+    } catch (error) {
+        summary.ok = false;
+        console.error("Region Automation | Failed to prune orphaned macros.", error);
+    }
+
     console.log("Region Automation | World macro sync finished.", summary);
 
     if (notify) {
         if (summary.failed > 0) {
             ui.notifications.warn(
-                `Region Automation synced macros (${summary.created} created, ${summary.updated} updated), but ${summary.failed} failed. See the console.`,
+                `Region Automation synced macros (${summary.created} created, ${summary.updated} updated, ${summary.pruned} pruned), but ${summary.failed} failed. See the console.`,
             );
         } else {
             ui.notifications.info(
-                `Region Automation synced macros (${summary.created} created, ${summary.updated} updated, ${summary.unchanged} unchanged).`,
+                `Region Automation synced macros (${summary.created} created, ${summary.updated} updated, ${summary.unchanged} unchanged, ${summary.pruned} pruned).`,
             );
         }
     }

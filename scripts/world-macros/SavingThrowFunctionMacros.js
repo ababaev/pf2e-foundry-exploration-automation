@@ -18,11 +18,12 @@ function validateConfig(config) {
  * is still "saving-throw" since it must match the Behavior's own
  * functionality flag.
  */
-export async function runSavingThrow({ behavior = null, event = null, region = null, scene = null, token = null, actor = null } = {}) {
-    await runTriggeredCheck({
+export async function runSavingThrow({ behavior = null, event = null, region = null, scene = null, token = null, actor = null, skipRegistration = false } = {}) {
+    return runTriggeredCheck({
         label: "Saving Throw",
         activity: "saving-throw",
         requireExplorationActivity: false,
+        skipRegistration,
         behavior,
         event,
         region,

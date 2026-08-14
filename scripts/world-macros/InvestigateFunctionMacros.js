@@ -6,10 +6,11 @@ function validateConfig(config) {
     return { ok: Number.isFinite(baseDC) && Number.isInteger(baseDC) };
 }
 
-export async function runInvestigate({ behavior = null, event = null, region = null, scene = null, token = null, actor = null } = {}) {
-    await runTriggeredCheck({
+export async function runInvestigate({ behavior = null, event = null, region = null, scene = null, token = null, actor = null, skipRegistration = false } = {}) {
+    return runTriggeredCheck({
         label: "Investigation",
         activity: "investigate",
+        skipRegistration,
         behavior,
         event,
         region,
