@@ -3,15 +3,40 @@ await (async () => {
     const MODULE_ID = "pf2e-exploration-automation";
 
     const BEHAVIOR_SOURCE = `
-await game.macros.getName("SavingThrowFunctionMacros")?.execute({
-    behavior,
-    event,
-    region,
-    scene,
-    token: event?.data?.token,
-    actor: event?.data?.token?.actor
-});
-`.trim();
+    const moduleApi =
+        game.modules
+            .get("pf2e-exploration-automation")
+            ?.api;
+
+    if (
+        !moduleApi ||
+        typeof moduleApi.requestBehaviorExecution !==
+            "function"
+    ) {
+        console.error(
+            "PF2e Exploration Automation | Module API is unavailable.",
+            {
+                behavior,
+                event,
+                region,
+                scene,
+            },
+        );
+    } else {
+        await moduleApi.requestBehaviorExecution({
+            behaviorUuid:
+                behavior?.uuid,
+
+            tokenUuid:
+                event?.data?.token?.document?.uuid ??
+                event?.data?.token?.uuid,
+
+            eventName:
+                event?.name ??
+                "tokenEnter",
+        });
+    }
+    `.trim();
 
     const SAVE_TYPES = {
         fortitude: "Fortitude",
