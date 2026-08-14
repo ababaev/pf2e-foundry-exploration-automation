@@ -124,7 +124,15 @@ entire update story, never a manual re-paste. Managed macros are filed under a `
 Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
 client ran the sync) can see and run them. `RegionAutomationMainMacros`, `UnregisterRegionMacros`, and
 `TriggerRegionForPartyMacros` (see below) get a custom `img` under `assets/icons/`; the rest fall back to a
-default core Foundry icon. Exposed on the module API as `syncWorldMacros` for manual re-runs.
+default core Foundry icon. Every created macro carries `flags[MODULE_ID].managed = true`. On every run,
+`syncWorldMacros()` also deletes any `type: "script"` macro carrying that flag whose name is no longer in
+`MANAGED_MACROS` (`pruneOrphanedMacros`) — this is what keeps a macro from a since-removed table entry (e.g.
+`SavingThrowFunctionMacros`/`SavingThrowRollHelperMacros`/`RegistrationMacros`, orphaned when Saving Throw was
+ported to ES-only) from lingering forever; it only touches macros carrying the flag, so anything a GM created
+or renamed into the folder by hand is left alone. This does **not** run when the module itself is disabled —
+Foundry gives modules no hook for that, so the Macro folder and any macros in it are untouched until the
+module is enabled again and a sync actually runs. Exposed on the module API as `syncWorldMacros` for manual
+re-runs.
 
 ### Functionality dispatch and porting an activity
 

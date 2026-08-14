@@ -101,6 +101,21 @@ globalThis.Macro = {
             const macro =
                 { ...data, id: `macro-${createdMacros.length}` };
 
+            macro.delete =
+                async () => {
+                    const index =
+                        createdMacros.indexOf(
+                            macro,
+                        );
+
+                    if (index !== -1) {
+                        createdMacros.splice(
+                            index,
+                            1,
+                        );
+                    }
+                };
+
             createdMacros.push(
                 macro,
             );
@@ -123,6 +138,14 @@ game.macros = {
         predicate,
     ) {
         return createdMacros.find(
+            predicate,
+        );
+    },
+
+    filter(
+        predicate,
+    ) {
+        return createdMacros.filter(
             predicate,
         );
     },
@@ -176,10 +199,53 @@ if (
     );
 }
 
+/*
+ * Simulate a macro left over from a MANAGED_MACROS entry that was later
+ * removed (e.g. SavingThrowFunctionMacros, once it became ES-only).
+ * syncWorldMacros should prune this during the ready hook below.
+ */
+const orphanedMacro = {
+    id: "macro-orphan",
+    name: "SomeRemovedManagedMacro",
+    type: "script",
+    flags: { "pf2e-exploration-automation": { managed: true } },
+};
+
+orphanedMacro.delete =
+    async () => {
+        const index =
+            createdMacros.indexOf(
+                orphanedMacro,
+            );
+
+        if (index !== -1) {
+            createdMacros.splice(
+                index,
+                1,
+            );
+        }
+    };
+
+createdMacros.push(
+    orphanedMacro,
+);
+
 game.ready =
     true;
 
 await onceHooks.get("ready")();
+
+if (
+    createdMacros.some(
+        macro =>
+            macro.name ===
+            "SomeRemovedManagedMacro",
+    )
+) {
+    throw new Error(
+        "syncWorldMacros did not prune an orphaned managed macro during the ready hook.",
+    );
+}
 
 if (
     createdMacros.length ===
