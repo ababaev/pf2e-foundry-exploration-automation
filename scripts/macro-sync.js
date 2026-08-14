@@ -50,6 +50,11 @@ const MANAGED_MACROS = Object.freeze([
         img: `modules/${MODULE_ID}/assets/icons/unregister-region.png`,
     },
     {
+        name: "TriggerRegionForPartyMacros",
+        file: "./world-macros/TriggerRegionForPartyMacros.js",
+        img: `modules/${MODULE_ID}/assets/icons/region-manual-automation-run.png`,
+    },
+    {
         name: "SearchConfigurationMacros",
         file: "./world-macros/SearchConfigurationMacros.js",
     },

@@ -27,10 +27,11 @@ bundler/transpiler unless explicitly asked.
 ### Two code populations
 
 - `scripts/main.js`, `scripts/socket.js`, `scripts/executor.js`, `scripts/migrate-behaviors.js`,
-  `scripts/macro-sync.js`, `scripts/module-id.js` — the actual module code, loaded via `module.json`. Normal
-  camelCase, standard JS module conventions, free to `import` from anywhere else in this population.
+  `scripts/macro-sync.js`, `scripts/module-id.js`, `scripts/manual-trigger.js` — the actual module code,
+  loaded via `module.json`. Normal camelCase, standard JS module conventions, free to `import` from anywhere
+  else in this population.
 - `scripts/world-macros/*.js` — source-of-truth copies of Foundry **world Macros**: scripts that get loaded
-  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Six of them
+  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Seven of them
   (everything except `ExplorationActivityMacros.js` and `RegistrationMacros.js`, see below) are looked up by
   name at runtime (`game.macros.getName(...)`/`.find(...)`) by `RegionAutomationMainMacros.js` — so a matching
   `Macro` document must exist in the world. A GM does **not** paste these in by hand: `scripts/macro-sync.js`
@@ -75,6 +76,35 @@ Players can't update `RegionBehavior` flags, run GM-owned macros, or see secret 
    resolves the `RegionBehavior`/`Token` from UUID, checks the requesting user actually controls the actor
    (`requesterMayUseActor` — owner permission or GM), reads the `functionality` flag, and dispatches.
 
+### On-demand triggering (no physical Region entry)
+
+Some Regions don't correspond to a real place on the map — e.g. an abstract "roll for the whole party" trigger
+a GM fires once per hour of travel, or whenever else it's narratively appropriate. `TriggerRegionForPartyMacros`
+(a GM-facing world Macro, provisioned like the other paste-only macros) lets a GM run every Region Automation
+Behavior on a selected Region against every player-character token on the active Scene, right now, as if each
+had just walked in:
+
+1. The macro validates GM/Scene/exactly-one-Region-selected (same checks as `UnregisterRegionMacros`), collects
+   every token on the active Scene whose `actor.type === "character"`, then calls
+   `game.modules.get(MODULE_ID).api.triggerRegionAutomationForTokens({ region, tokens })`.
+2. `triggerRegionAutomationForTokens` (`scripts/manual-trigger.js`) runs entirely on the calling GM client — no
+   player → GM socket routing, since only a GM can call it (unlike the real `tokenEnter` path, which must
+   support player clients). It finds every Region Automation Behavior on the Region and, for each
+   Behavior × token pair, calls that functionality's `runX` function (the same ones in `executor.js`'s
+   `MODULE_FUNCTIONS`) with a synthetic `{ name: "tokenEnter", data: { token } }` event and
+   `skipRegistration: true`.
+3. `skipRegistration: true` flows into `runTriggeredCheck` (`shared/trigger-flow.js`) and skips step 4
+   (`registerTokenTrigger`/`triggeredTokenUuids`) entirely — this run is never recorded as "already
+   triggered," so a GM can fire the same macro again immediately without needing `UnregisterRegionMacros`
+   first. Everything else about the run (the `functionality`-flag check, `validateConfig`, the
+   `requireExplorationActivity` gate, the roll, the whispered chat message) behaves exactly as it would for a
+   real Region entry.
+4. `runTriggeredCheck` returns `{ ok, rolled, reason, result? }` at every exit point (see its JSDoc) instead of
+   `undefined` — `rolled` is only true when the roll actually executed, so a gated-out pair (e.g. an actor not
+   performing the matching exploration activity) is distinguishable from one that actually rolled.
+   `triggerRegionAutomationForTokens` uses this to report accurate `ran`/`skipped` counts; the real
+   `tokenEnter` path (`executor.js`) still ignores the return value entirely, so this is additive.
+
 ### Behavior migration
 
 Older Behaviors had macro-execution logic pasted directly into their script, which broke on player clients
@@ -92,9 +122,9 @@ route prefix), then creates a `Macro` document with that name/command if none ex
 one in place if its stored `command` has drifted from the source — so a `git pull` + world reload is the
 entire update story, never a manual re-paste. Managed macros are filed under a `"PF2e Exploration
 Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
-client ran the sync) can see and run them. `RegionAutomationMainMacros` and `UnregisterRegionMacros` — the two
-a GM actually clicks — get a custom `img`; the rest fall back to a default core Foundry icon. Exposed on the
-module API as `syncWorldMacros` for manual re-runs.
+client ran the sync) can see and run them. `RegionAutomationMainMacros`, `UnregisterRegionMacros`, and
+`TriggerRegionForPartyMacros` (see below) get a custom `img` under `assets/icons/`; the rest fall back to a
+default core Foundry icon. Exposed on the module API as `syncWorldMacros` for manual re-runs.
 
 ### Functionality dispatch and porting an activity
 
@@ -147,10 +177,12 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   which gets its `outcome` from PF2e's native Seek action instead of computing it locally).
 - `shared/gm.js` — `getActiveGMs()`.
 - `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback orchestration
-  described above, parameterized by `label`/`activity`/`requireExplorationActivity`/`validateConfig`/`runRoll`
-  (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw). It imports `checkExplorationActivity` and
-  `registerTokenTrigger` directly and drives them through the same `resultBox` contract those two
-  paste-style files still expose internally.
+  described above, parameterized by
+  `label`/`activity`/`requireExplorationActivity`/`skipRegistration`/`validateConfig`/`runRoll`
+  (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw;
+  `skipRegistration: true` skips the one-shot registration and its rollback — see "On-demand triggering"
+  above). It imports `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through
+  the same `resultBox` contract those two paste-style files still expose internally.
 
 ### Per-activity macro triad
 
