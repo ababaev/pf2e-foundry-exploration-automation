@@ -75,6 +75,65 @@ globalThis.ui = {
     },
 };
 
+globalThis.CONST = {
+    DOCUMENT_OWNERSHIP_LEVELS: {
+        OWNER:
+            3,
+    },
+};
+
+globalThis.fetch =
+    async () => ({
+        ok:
+            true,
+
+        async text() {
+            return "// smoke-test macro source";
+        },
+    });
+
+const createdMacros =
+    [];
+
+globalThis.Macro = {
+    create:
+        async data => {
+            const macro =
+                { ...data, id: `macro-${createdMacros.length}` };
+
+            createdMacros.push(
+                macro,
+            );
+
+            return macro;
+        },
+};
+
+globalThis.Folder = {
+    create:
+        async data => ({
+            ...data,
+            id:
+                "folder-0",
+        }),
+};
+
+game.macros = {
+    find(
+        predicate,
+    ) {
+        return createdMacros.find(
+            predicate,
+        );
+    },
+};
+
+game.folders = {
+    find() {
+        return undefined;
+    },
+};
+
 await import(
     `../scripts/main.js?smoke=${Date.now()}`
 );
@@ -121,6 +180,15 @@ game.ready =
     true;
 
 await onceHooks.get("ready")();
+
+if (
+    createdMacros.length ===
+    0
+) {
+    throw new Error(
+        "syncWorldMacros did not create any macros during the ready hook.",
+    );
+}
 
 console.log(
     "PF2e Exploration Automation | Startup smoke test passed.",

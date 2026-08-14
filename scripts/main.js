@@ -6,8 +6,10 @@
 import { MODULE_ID } from "./module-id.js";
 import { getPrimaryGM, isPrimaryGM, registerSocket, requestBehaviorExecution } from "./socket.js";
 import { GENERIC_BEHAVIOR_SOURCE, migrateWorldBehaviors, normalizeBehaviorSource } from "./migrate-behaviors.js";
+import { syncWorldMacros } from "./macro-sync.js";
 
 const AUTO_MIGRATE_BEHAVIORS = true;
+const AUTO_SYNC_MACROS = true;
 
 let apiInitialized = false;
 let readyInitialized = false;
@@ -30,6 +32,7 @@ function exposeApi() {
         requestBehaviorExecution,
         migrateWorldBehaviors,
         normalizeBehaviorSource,
+        syncWorldMacros,
         genericBehaviorSource: GENERIC_BEHAVIOR_SOURCE,
         getPrimaryGM,
         isPrimaryGM,
@@ -88,6 +91,15 @@ async function initializeReady() {
     }
 
     console.log("PF2e Exploration Automation | Primary GM ready.");
+
+    if (AUTO_SYNC_MACROS) {
+        try {
+            const summary = await syncWorldMacros({ notify: false });
+            console.log("PF2e Exploration Automation | World macro sync finished.", summary);
+        } catch (error) {
+            console.error("PF2e Exploration Automation | World macro sync failed.", error);
+        }
+    }
 
     if (!AUTO_MIGRATE_BEHAVIORS) return;
 

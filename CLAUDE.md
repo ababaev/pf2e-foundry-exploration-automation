@@ -14,8 +14,9 @@ bundler/transpiler unless explicitly asked.
 
 ## Commands
 
-- Run the startup smoke test (mocks `game`/`Hooks`/`ui` and imports `scripts/main.js` to catch startup
-  crashes, e.g. `game.modules` being unavailable during early init): `node tools/smoke-test.mjs`
+- Run the startup smoke test (mocks `game`/`Hooks`/`ui`/`fetch`/`Macro`/`Folder` and imports `scripts/main.js`
+  to catch startup crashes, e.g. `game.modules` being unavailable during early init, and asserts
+  `syncWorldMacros` actually creates macros during the `ready` hook): `node tools/smoke-test.mjs`
 - No other test runner, linter, or build tool is configured. `node --check <file>` catches syntax errors;
   there is no automated coverage of runtime behavior beyond the smoke test, so verify non-trivial changes
   with a throwaway mocked-Foundry script (mock `game`/`ui`/`ChatMessage`/`Roll`/`ui.notifications`, import
@@ -26,23 +27,25 @@ bundler/transpiler unless explicitly asked.
 ### Two code populations
 
 - `scripts/main.js`, `scripts/socket.js`, `scripts/executor.js`, `scripts/migrate-behaviors.js`,
-  `scripts/module-id.js` — the actual module code, loaded via `module.json`. Normal camelCase, standard JS
-  module conventions, free to `import` from anywhere else in this population.
-- `scripts/world-macros/*.js` — mostly source-of-truth copies of Foundry **world Macros**, i.e. scripts a GM
-  pastes into Foundry's macro editor, which therefore cannot use static `import`. Two files are the
-  exception and both must stay compatible with being pasted, because they are still looked up by name
-  (`game.macros.getName(...)`) from the one remaining un-ported activity:
-  - `RegistrationMacros.js` — looked up by `SavingThrowFunctionMacros.js`.
-  - `ExplorationActivityMacros.js` — not currently looked up by name by anything, kept in the same style for
-    consistency in case that changes.
+  `scripts/macro-sync.js`, `scripts/module-id.js` — the actual module code, loaded via `module.json`. Normal
+  camelCase, standard JS module conventions, free to `import` from anywhere else in this population.
+- `scripts/world-macros/*.js` — source-of-truth copies of Foundry **world Macros**: scripts that get loaded
+  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Nine of them
+  (everything except `ExplorationActivityMacros.js`, see below) are looked up by name at runtime
+  (`game.macros.getName(...)`/`.find(...)`) — by `RegionAutomationMainMacros.js`, by
+  `SavingThrowFunctionMacros.js`, or by `executor.js`'s saving-throw fallback — so a matching `Macro` document
+  must exist in the world. A GM does **not** paste these in by hand: `scripts/macro-sync.js` creates/updates
+  them automatically as the primary GM reaches `ready`, fetching each one's live source straight from these
+  same files (see "World Macro provisioning" below). `ExplorationActivityMacros.js` is the one file in this
+  population not currently looked up by name by anything (Search/Investigate/DetectMagic import
+  `checkExplorationActivity` from it directly as an ES module instead) — kept in the same paste-compatible
+  style for consistency in case that changes, and deliberately excluded from `macro-sync.js`'s list until it
+  is.
 
-  Both use an `ra`-prefixed variable naming convention (`raBehavior`, `raToken`, `raResult`, ...) and
-  `typeof x !== "undefined"` guards instead of relying on parameter defaults, because when pasted as a raw
-  macro body those names are Foundry-injected scope variables that may not exist at all — referencing an
-  undeclared variable directly would throw. Preserve this in both files. `*ConfigurationMacros.js` (all four
-  activities), `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, and the not-yet-ported
-  `SavingThrowFunctionMacros.js`/`SavingThrowRollHelperMacros.js` are the same kind of paste-only script and
-  follow the same convention; none of them import anything.
+  Every file in this population uses an `ra`-prefixed variable naming convention (`raBehavior`, `raToken`,
+  `raResult`, ...) and `typeof x !== "undefined"` guards instead of relying on parameter defaults, because
+  inside a `Macro`'s script body those names are Foundry-injected scope variables that may not exist at all —
+  referencing an undeclared variable directly would throw. Preserve this whenever touching these files.
 
   `Search`/`Investigate`/`DetectMagic`'s `*FunctionMacros.js` and `*RollHelperMacros.js` files, by contrast,
   are **only** loaded as real ES modules (imported from `executor.js` / each other / `scripts/world-macros/shared/`)
@@ -78,6 +81,19 @@ Older Behaviors had macro-execution logic pasted directly into their script, whi
 the primary GM) and rewrites any Region Automation behavior's `system.source` to the generic dispatcher
 script, without touching its configured flags (DC, hint, subject, skills, `triggeredTokenUuids`, etc.).
 Newly created Behaviors are normalized the same way via the `createRegionBehavior` hook in `main.js`.
+
+### World Macro provisioning
+
+`scripts/macro-sync.js`'s `syncWorldMacros()` runs right before behavior migration, in the same primary-GM
+`ready`-hook block in `main.js`. For each entry in its `MANAGED_MACROS` table it `fetch()`es the live source of
+the matching `scripts/world-macros/*.js` file (resolved against `import.meta.url`, so it's correct under any
+route prefix), then creates a `Macro` document with that name/command if none exists, or updates the existing
+one in place if its stored `command` has drifted from the source — so a `git pull` + world reload is the
+entire update story, never a manual re-paste. Managed macros are filed under a `"PF2e Exploration
+Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
+client ran the sync) can see and run them. `RegionAutomationMainMacros` and `UnregisterRegionMacros` — the two
+a GM actually clicks — get a custom `img`; the rest fall back to a default core Foundry icon. Exposed on the
+module API as `syncWorldMacros` for manual re-runs.
 
 ### Functionality dispatch and porting an activity
 
@@ -139,8 +155,8 @@ three-file shape in `scripts/world-macros/`:
 
 - **`*ConfigurationMacros.js`** — GM-facing `DialogV2` UI for attaching/configuring the automation on a
   selected Region (invoked from `RegionAutomationMainMacros.js`'s "Add Automation" dialog, which picks the
-  right Configuration macro by name via `findSingleMacro`). Always a paste-only macro, even once its
-  activity is ported.
+  right Configuration macro by name via `findSingleMacro`). Always provisioned as a `Macro` document (via
+  `macro-sync.js`), never an ES module, even once its activity is ported.
 - **`*FunctionMacros.js`** — orchestration run on `tokenEnter` (via the executor). For a ported activity
   this is a thin wrapper around `runTriggeredCheck` (see above); for `saving-throw` it's still the full IIFE
   looking up `RegistrationMacros`/`SavingThrowRollHelperMacros` by `game.macros.getName(...)`.
