@@ -65,6 +65,61 @@ await (async () => {
                 })[character],
         );
 
+    /*
+     * Lets a GM drag a Journal/Actor/Item link (e.g. from a Journal
+     * entry) onto a textarea and have it inserted as a proper
+     * @UUID[...] reference, instead of only being able to type or
+     * paste one by hand.
+     */
+    const wireDocumentDrop = textarea => {
+        if (!textarea) return;
+
+        textarea.addEventListener("dragover", event => event.preventDefault());
+
+        textarea.addEventListener("drop", async event => {
+            event.preventDefault();
+
+            const TextEditorClass =
+                foundry.applications?.ux?.TextEditor?.implementation ??
+                foundry.applications?.ux?.TextEditor ??
+                globalThis.TextEditor ??
+                null;
+
+            let data = null;
+
+            try {
+                data = TextEditorClass?.getDragEventData
+                    ? TextEditorClass.getDragEventData(event)
+                    : JSON.parse(event.dataTransfer.getData("text/plain"));
+            } catch (error) {
+                console.warn("Region Automation | Could not read dropped data", error);
+                return;
+            }
+
+            if (!data?.uuid) return;
+
+            let droppedDoc = null;
+
+            try {
+                droppedDoc = await fromUuid(data.uuid);
+            } catch (error) {
+                console.warn("Region Automation | Could not resolve dropped document", error);
+            }
+
+            const link = `@UUID[${data.uuid}]{${droppedDoc?.name ?? data.uuid}}`;
+
+            const start = textarea.selectionStart ?? textarea.value.length;
+            const end = textarea.selectionEnd ?? textarea.value.length;
+
+            textarea.value = `${textarea.value.slice(0, start)}${link}${textarea.value.slice(end)}`;
+
+            const caret = start + link.length;
+            textarea.setSelectionRange(caret, caret);
+            textarea.dispatchEvent(new Event("input", { bubbles: true }));
+            textarea.focus();
+        });
+    };
+
     if (!game.user.isGM) {
         ui.notifications.error(
             "Region Automation: only a GM can add a Search automation.",
@@ -251,7 +306,7 @@ await (async () => {
                     width: 640,
                 },
 
-                modal: true,
+                modal: false,
                 rejectClose: false,
                 content,
 
@@ -343,6 +398,12 @@ await (async () => {
                         root.querySelector(
                             "[data-ra-target-description]",
                         );
+
+                    wireDocumentDrop(
+                        root.querySelector(
+                            '[name="hint"]',
+                        ),
+                    );
 
                     const updateDescription = () => {
                         const selected =
