@@ -35,14 +35,23 @@ async function callWithResultBox(fn, args) {
 }
 
 async function rollBackTriggeredToken({ label, behavior, token }) {
+    /*
+     * token is typically the Token placeable passed through from the
+     * Region event (event.data.token), whose uuid lives at .document.uuid,
+     * not directly on the placeable itself — the same unwrapping
+     * registerTokenTrigger already does before it stores this token's
+     * uuid in the first place.
+     */
+    const tokenUuid = token?.document?.uuid ?? token?.uuid ?? null;
+
     try {
         const current = behavior.flags?.[MODULE_ID]?.triggeredTokenUuids;
-        const updated = Array.isArray(current) ? current.filter(uuid => uuid !== token.uuid) : [];
+        const updated = Array.isArray(current) ? current.filter(uuid => uuid !== tokenUuid) : [];
 
         await behavior.update({ [`flags.${MODULE_ID}.triggeredTokenUuids`]: updated });
 
         console.warn(`Region Automation | ${label} registration rolled back after technical failure`, {
-            tokenUuid: token.uuid,
+            tokenUuid,
             behaviorUuid: behavior.uuid,
         });
     } catch (rollbackError) {

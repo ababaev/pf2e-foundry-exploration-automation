@@ -14,13 +14,24 @@ bundler/transpiler unless explicitly asked.
 
 ## Commands
 
-- Run the startup smoke test (mocks `game`/`Hooks`/`ui`/`fetch`/`Macro`/`Folder` and imports `scripts/main.js`
-  to catch startup crashes, e.g. `game.modules` being unavailable during early init, and asserts
-  `syncWorldMacros` actually creates macros during the `ready` hook): `node tools/smoke-test.mjs`
-- No other test runner, linter, or build tool is configured. `node --check <file>` catches syntax errors;
-  there is no automated coverage of runtime behavior beyond the smoke test, so verify non-trivial changes
-  with a throwaway mocked-Foundry script (mock `game`/`ui`/`ChatMessage`/`Roll`/`ui.notifications`, import
-  the real file under test, assert on its output) before calling a change done.
+- Run the whole test suite: `node --test` (from the repo root, no arguments — Node's built-in `node:test`
+  runner, no dependency or `package.json` needed; passing an explicit directory/file path instead, e.g.
+  `node --test tests/config/`, silently fails to discover anything in this Node version, so always run it
+  bare and use `--test-name-pattern` to narrow down if needed). This also sweeps up
+  `tools/smoke-test.mjs` (see below) as a bonus single pass/fail test, since it throws on failure and
+  otherwise completes normally. See `tests/README.md` for the suite's structure and the testing techniques
+  (`AsyncFunction`-based macro execution, the `DialogV2.wait` mock, module-level-state gotchas) it relies on
+  before adding to it.
+- The startup smoke test alone (mocks `game`/`Hooks`/`ui`/`fetch`/`Macro`/`Folder` and imports
+  `scripts/main.js` to catch startup crashes, e.g. `game.modules` being unavailable during early init, and
+  asserts `syncWorldMacros` creates macros and prunes orphans during the `ready` hook): `node tools/smoke-test.mjs`
+- No linter or build tool is configured. `node --check <file>` catches syntax errors in the module-only
+  files (those with `import`/`export`); it cannot check the paste-only `scripts/world-macros/*.js` files that
+  have neither (Node can't unambiguously detect them as ESM and falls back to CommonJS, where their
+  top-level `await` is a syntax error) — `tests/helpers/run-macro.mjs`'s `AsyncFunction` approach is what
+  actually runs those under Node. For anything not covered by the suite, verify with a throwaway
+  mocked-Foundry script (mock `game`/`ui`/`ChatMessage`/`Roll`/`ui.notifications`, import or run the real
+  file under test, assert on its output) before calling a change done.
 
 ## Architecture
 
