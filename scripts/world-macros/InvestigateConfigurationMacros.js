@@ -980,12 +980,43 @@ await (async () => {
                             }
                         };
 
+                    /*
+                     * Rewriting a chipList's innerHTML forces Foundry's
+                     * auto-height DialogV2 to re-measure and relayout the
+                     * whole window. Add/Move only ever changes one or two
+                     * of the seven difficulty columns, so skipping the
+                     * other five (unchanged) columns' DOM writes cuts that
+                     * relayout work from 7x down to 1-2x per click.
+                     */
+                    const lastRenderedSkillSignatures =
+                        {};
+
                     const renderSkills =
                         () => {
                             for (
                                 const difficulty
                                 of DIFFICULTIES
                             ) {
+                                const slugs =
+                                    editorState.skills[
+                                        difficulty
+                                    ] ?? [];
+
+                                const signature =
+                                    slugs.join("|");
+
+                                if (
+                                    lastRenderedSkillSignatures[
+                                        difficulty
+                                    ] === signature
+                                ) {
+                                    continue;
+                                }
+
+                                lastRenderedSkillSignatures[
+                                    difficulty
+                                ] = signature;
+
                                 const chipList =
                                     root.querySelector(
                                         `[data-chip-list="${difficulty}"]`,
@@ -994,11 +1025,6 @@ await (async () => {
                                 if (!chipList) {
                                     continue;
                                 }
-
-                                const slugs =
-                                    editorState.skills[
-                                        difficulty
-                                    ] ?? [];
 
                                 if (
                                     slugs.length === 0

@@ -124,6 +124,55 @@ test("Investigate configuration: Performance, Stealth, Survival, and Thievery ar
     assert.deepEqual(config.skills.easy, ["unspecified-lore", "performance"]);
 });
 
+test("Investigate configuration: Add / Move only rewrites the difficulty column(s) that actually changed", async () => {
+    const region = makeRegion();
+    setupWorld({ regions: [{ document: region }] });
+
+    let veryEasyRewriteCount = 0;
+
+    const { wait } = queueDialogResponses([
+        {
+            fields: { subject: "Strange Runes", hint: "", baseDC: "20" },
+            elements: {
+                "[data-chip-list=\"very-easy\"]": {},
+                "[data-chip-list=\"normal\"]": {},
+                "[data-ra-skill-picker]": { value: "arcana" },
+                "[data-ra-difficulty-picker]": { value: "normal" },
+                "[data-ra-add-skill]": {},
+            },
+            interact: async elements => {
+                // Count writes to the untouched "very-easy" column (which
+                // already holds the default Specified Lore chip) by
+                // wrapping its innerHTML setter.
+                const veryEasy = elements['[data-chip-list="very-easy"]'];
+                const descriptor = Object.getOwnPropertyDescriptor(veryEasy, "innerHTML");
+                Object.defineProperty(veryEasy, "innerHTML", {
+                    configurable: true,
+                    get: descriptor.get,
+                    set(html) {
+                        veryEasyRewriteCount += 1;
+                        descriptor.set.call(veryEasy, html);
+                    },
+                });
+
+                // The initial render already wrote every column once
+                // (including very-easy's default chip) before this
+                // interact() ran; reset the counter to isolate what
+                // Add/Move itself does.
+                veryEasyRewriteCount = 0;
+
+                await elements["[data-ra-add-skill]"].fire("click");
+            },
+        },
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(veryEasyRewriteCount, 0, "adding a skill to 'normal' must not rewrite the unrelated 'very-easy' column");
+    assert.deepEqual(region.behaviors[0].flags[MODULE_ID].config.skills.normal, ["arcana"]);
+});
+
 test("Investigate configuration: the Add / Move picker warns and ignores an invalid skill/difficulty pair", async () => {
     const region = makeRegion();
     const { notifications } = setupWorld({ regions: [{ document: region }] });
