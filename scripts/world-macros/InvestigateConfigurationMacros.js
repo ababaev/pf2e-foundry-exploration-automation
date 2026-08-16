@@ -74,8 +74,12 @@ await (async () => {
         ["medicine", "Medicine"],
         ["nature", "Nature"],
         ["occultism", "Occultism"],
+        ["performance", "Performance"],
         ["religion", "Religion"],
         ["society", "Society"],
+        ["stealth", "Stealth"],
+        ["survival", "Survival"],
+        ["thievery", "Thievery"],
         ["specified-lore", "Specified Lore"],
         ["unspecified-lore", "Unspecified Lore"],
     ].map(([slug, label]) => ({ slug, label }));

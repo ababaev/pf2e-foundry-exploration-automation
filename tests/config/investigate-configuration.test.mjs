@@ -88,6 +88,42 @@ test("Investigate configuration: the Add / Move picker moves a skill into the ch
     assert.deepEqual(config.skills.hard, ["arcana"]);
 });
 
+test("Investigate configuration: Performance, Stealth, Survival, and Thievery are selectable skills", async () => {
+    const region = makeRegion();
+    setupWorld({ regions: [{ document: region }] });
+
+    const { wait } = queueDialogResponses([
+        {
+            fields: { subject: "Strange Runes", hint: "", baseDC: "20" },
+            elements: {
+                "[data-ra-skill-picker]": { value: "survival" },
+                "[data-ra-difficulty-picker]": { value: "normal" },
+                "[data-ra-add-skill]": {},
+            },
+            interact: async elements => {
+                await elements["[data-ra-add-skill]"].fire("click");
+                elements["[data-ra-skill-picker]"].value = "stealth";
+                elements["[data-ra-difficulty-picker]"].value = "hard";
+                await elements["[data-ra-add-skill]"].fire("click");
+                elements["[data-ra-skill-picker]"].value = "thievery";
+                elements["[data-ra-difficulty-picker]"].value = "hard";
+                await elements["[data-ra-add-skill]"].fire("click");
+                elements["[data-ra-skill-picker]"].value = "performance";
+                elements["[data-ra-difficulty-picker]"].value = "easy";
+                await elements["[data-ra-add-skill]"].fire("click");
+            },
+        },
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    const config = region.behaviors[0].flags[MODULE_ID].config;
+    assert.deepEqual(config.skills.normal, ["survival"]);
+    assert.deepEqual(config.skills.hard, ["stealth", "thievery"]);
+    assert.deepEqual(config.skills.easy, ["unspecified-lore", "performance"]);
+});
+
 test("Investigate configuration: the Add / Move picker warns and ignores an invalid skill/difficulty pair", async () => {
     const region = makeRegion();
     const { notifications } = setupWorld({ regions: [{ document: region }] });
