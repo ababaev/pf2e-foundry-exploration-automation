@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
 
 const MACRO_URL = new URL("../../scripts/world-macros/SavingThrowConfigurationMacros.js", import.meta.url);
 
-async function runMacro() {
-    await runPastedMacro(MACRO_URL);
+async function runMacro(scope = {}) {
+    await runPastedMacro(MACRO_URL, scope);
 }
 
 function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
@@ -35,6 +35,41 @@ test("Saving Throw configuration: rejects when zero or multiple Regions are sele
     const { notifications } = setupWorld({ regions: [] });
     await runMacro();
     assert.match(notifications.warn[0], /select exactly one Region/);
+});
+
+test("Saving Throw configuration: editing an existing Behavior updates it in place, pre-filling unspecified fields", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "saving-throw",
+        config: { subject: "Old Trap", saveType: "will", dc: 14, consequence: "old consequence" },
+        triggeredTokenUuids: ["Token.already-triggered"],
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { dc: "19" } }]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.equal(region.behaviors.length, 0);
+    assert.equal(existing.name, "[RA-save] Old Trap");
+    assert.deepEqual(existing.flags[MODULE_ID].config, {
+        subject: "Old Trap",
+        saveType: "will",
+        dc: 19,
+        consequence: "old consequence",
+    });
+    assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
+});
+
+test("Saving Throw configuration: rejects a non-GM user trying to edit", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({ functionality: "saving-throw", config: { subject: "X", saveType: "will", dc: 10 }, parent: region });
+    const { notifications } = setupWorld({ isGM: false });
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.match(notifications.error[0], /only a GM can edit a Saving Throw automation/);
 });
 
 test("Saving Throw configuration: valid submission creates a RegionBehavior with schemaVersion 1", async () => {

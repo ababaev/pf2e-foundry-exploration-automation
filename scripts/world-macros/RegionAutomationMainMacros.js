@@ -1,5 +1,36 @@
 await (async () => {
 
+    const raModuleId =
+        "pf2e-exploration-automation";
+
+    const macroNames = {
+        investigate:
+            "InvestigateConfigurationMacros",
+
+        "detect-magic":
+            "DetectMagicConfigurationMacros",
+
+        search:
+            "SearchConfigurationMacros",
+
+        "saving-throw":
+            "SavingThrowConfigurationMacros",
+    };
+
+    const functionalityLabels = {
+        investigate:
+            "Investigation",
+
+        "detect-magic":
+            "Detect Magic",
+
+        search:
+            "Search",
+
+        "saving-throw":
+            "Saving Throw",
+    };
+
     const findSingleMacro = name => {
         const matches =
             game.macros.filter(
@@ -196,6 +227,22 @@ await (async () => {
 
                 {
                     action:
+                        "edit",
+
+                    label:
+                        "Edit Existing…",
+
+                    icon:
+                        "fa-solid fa-pen",
+
+                    callback: () => ({
+                        action:
+                            "edit",
+                    }),
+                },
+
+                {
+                    action:
                         "cancel",
 
                     label:
@@ -219,19 +266,188 @@ await (async () => {
         return;
     }
 
-    const macroNames = {
-        investigate:
-            "InvestigateConfigurationMacros",
+    if (result.action === "edit") {
+        const raAutomationBehaviors =
+            Array.from(
+                raRegion.behaviors ?? [],
+            ).filter(
+                raBehavior =>
+                    raBehavior.flags?.[raModuleId] &&
+                    typeof raBehavior.flags[raModuleId] ===
+                        "object" &&
+                    functionalityLabels[
+                        raBehavior.flags[raModuleId]
+                            .functionality
+                    ],
+            );
 
-        "detect-magic":
-            "DetectMagicConfigurationMacros",
+        if (raAutomationBehaviors.length === 0) {
+            ui.notifications.info(
+                `Region Automation: "${raRegion.name}" has no automations to edit.`,
+            );
 
-        search:
-            "SearchConfigurationMacros",
+            return;
+        }
 
-        "saving-throw":
-            "SavingThrowConfigurationMacros",
-    };
+        const behaviorOptionsHTML =
+            raAutomationBehaviors
+                .map(
+                    (raBehavior, raIndex) => `
+                        <option value="${raIndex}">
+                            ${escapeHTML(
+                                functionalityLabels[
+                                    raBehavior.flags[raModuleId]
+                                        .functionality
+                                ],
+                            )} — ${escapeHTML(raBehavior.name)}
+                        </option>
+                    `,
+                )
+                .join("");
+
+        const editContent =
+            document.createElement("div");
+
+        editContent.innerHTML = `
+            <div
+                style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.75rem;
+                "
+            >
+                <p style="margin: 0;">
+                    Choose an automation on
+                    <strong>
+                        ${escapeHTML(raRegion.name)}
+                    </strong>
+                    to edit.
+                </p>
+
+                <select
+                    name="behaviorIndex"
+                    style="width: 100%;"
+                    autofocus
+                >
+                    ${behaviorOptionsHTML}
+                </select>
+            </div>
+        `;
+
+        const editResult =
+            await foundry.applications.api.DialogV2.wait({
+                window: {
+                    title:
+                        "Region Automation — Edit Existing",
+                },
+
+                position: {
+                    width: 560,
+                },
+
+                modal: false,
+                rejectClose: false,
+                content: editContent,
+
+                buttons: [
+                    {
+                        action:
+                            "edit",
+
+                        label:
+                            "Edit",
+
+                        icon:
+                            "fa-solid fa-pen",
+
+                        default:
+                            true,
+
+                        callback: (
+                            event,
+                            button,
+                        ) => ({
+                            action:
+                                "edit",
+
+                            behaviorIndex: Number(
+                                button.form?.elements
+                                    ?.namedItem(
+                                        "behaviorIndex",
+                                    )?.value ?? 0,
+                            ),
+                        }),
+                    },
+
+                    {
+                        action:
+                            "cancel",
+
+                        label:
+                            "Cancel",
+
+                        icon:
+                            "fa-solid fa-xmark",
+
+                        callback: () => ({
+                            action:
+                                "cancel",
+                        }),
+                    },
+                ],
+            });
+
+        if (
+            !editResult ||
+            editResult.action === "cancel"
+        ) {
+            return;
+        }
+
+        const raChosenBehavior =
+            raAutomationBehaviors[
+                editResult.behaviorIndex
+            ];
+
+        if (!raChosenBehavior) {
+            ui.notifications.error(
+                "Region Automation: the selected automation is no longer available.",
+            );
+
+            return;
+        }
+
+        const raChosenFunctionality =
+            raChosenBehavior.flags[raModuleId]
+                .functionality;
+
+        const editMacroName =
+            macroNames[raChosenFunctionality];
+
+        if (!editMacroName) {
+            ui.notifications.error(
+                "Region Automation: this automation's type is unavailable for editing.",
+            );
+
+            return;
+        }
+
+        const editMacro =
+            findSingleMacro(
+                editMacroName,
+            );
+
+        if (!editMacro) {
+            return;
+        }
+
+        await editMacro.execute({
+            existingBehavior:
+                raChosenBehavior,
+        });
+
+        return;
+    }
 
     const macroName =
         macroNames[result.action];

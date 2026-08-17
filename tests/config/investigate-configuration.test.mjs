@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
 
 const MACRO_URL = new URL("../../scripts/world-macros/InvestigateConfigurationMacros.js", import.meta.url);
 
-async function runMacro() {
-    await runPastedMacro(MACRO_URL);
+async function runMacro(scope = {}) {
+    await runPastedMacro(MACRO_URL, scope);
 }
 
 function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
@@ -35,6 +35,72 @@ test("Investigate configuration: rejects when zero Regions are selected", async 
     const { notifications } = setupWorld({ regions: [] });
     await runMacro();
     assert.match(notifications.warn[0], /select exactly one Region/);
+});
+
+test("Investigate configuration: editing an existing Behavior pre-fills its current subject/DC/skills and updates in place", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "investigate",
+        config: { subject: "Old Runes", hint: "Old hint", baseDC: 18, skills: { hard: ["arcana"] } },
+        triggeredTokenUuids: ["Token.already-triggered"],
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    // Only "subject" is supplied; hint/baseDC/skills should fall back to
+    // the existing Behavior's current values.
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { subject: "Renamed Runes" } }]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.equal(region.behaviors.length, 0);
+    assert.equal(existing.name, "[RA-investigate] Renamed Runes");
+    assert.equal(existing.flags[MODULE_ID].config.subject, "Renamed Runes");
+    assert.equal(existing.flags[MODULE_ID].config.hint, "Old hint");
+    assert.equal(existing.flags[MODULE_ID].config.baseDC, 18);
+    assert.deepEqual(existing.flags[MODULE_ID].config.skills.hard, ["arcana"]);
+    assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
+});
+
+test("Investigate configuration: editing keeps the Add / Move picker working against the existing skills", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "investigate",
+        config: { subject: "Runes", hint: "", baseDC: 20, skills: { hard: ["arcana"] } },
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    const { wait } = queueDialogResponses([
+        {
+            fields: { subject: "Runes" },
+            elements: {
+                "[data-ra-skill-picker]": { value: "religion" },
+                "[data-ra-difficulty-picker]": { value: "easy" },
+                "[data-ra-add-skill]": {},
+            },
+            interact: async elements => {
+                await elements["[data-ra-add-skill]"].fire("click");
+            },
+        },
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    const config = existing.flags[MODULE_ID].config;
+    assert.deepEqual(config.skills.hard, ["arcana"]);
+    assert.deepEqual(config.skills.easy, ["religion"]);
+});
+
+test("Investigate configuration: rejects a non-GM user trying to edit", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({ functionality: "investigate", config: { subject: "X", baseDC: 20, skills: {} }, parent: region });
+    const { notifications } = setupWorld({ isGM: false });
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.match(notifications.error[0], /only a GM can edit an Investigation/);
 });
 
 test("Investigate configuration: valid submission keeps the default skill columns (Specified/Unspecified Lore)", async () => {

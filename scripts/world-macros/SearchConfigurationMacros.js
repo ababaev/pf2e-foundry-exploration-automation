@@ -120,50 +120,78 @@ await (async () => {
         });
     };
 
+    /*
+     * When invoked as `.execute({ existingBehavior })` (by
+     * RegionAutomationMainMacros.js's "Edit Existing" flow), this dialog
+     * edits that Behavior in place instead of creating a new one.
+     */
+    const raExistingBehavior =
+        typeof existingBehavior !== "undefined" && existingBehavior
+            ? existingBehavior
+            : null;
+
     if (!game.user.isGM) {
         ui.notifications.error(
-            "Region Automation: only a GM can add a Search automation.",
+            raExistingBehavior
+                ? "Region Automation: only a GM can edit a Search automation."
+                : "Region Automation: only a GM can add a Search automation.",
         );
 
         return;
     }
 
-    if (!canvas?.ready || !canvas.scene) {
-        ui.notifications.error(
-            "Region Automation: there is no active Scene.",
+    let raRegion = null;
+
+    if (raExistingBehavior) {
+        raRegion = raExistingBehavior.parent ?? null;
+    } else {
+        if (!canvas?.ready || !canvas.scene) {
+            ui.notifications.error(
+                "Region Automation: there is no active Scene.",
+            );
+
+            return;
+        }
+
+        const selectedRegions = Array.from(
+            canvas.regions?.controlled ?? [],
         );
 
-        return;
+        if (selectedRegions.length !== 1) {
+            ui.notifications.warn(
+                `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
+            );
+
+            return;
+        }
+
+        raRegion = selectedRegions[0]?.document;
+
+        if (!raRegion) {
+            ui.notifications.error(
+                "Region Automation: the selected Region document is unavailable.",
+            );
+
+            return;
+        }
     }
 
-    const selectedRegions = Array.from(
-        canvas.regions?.controlled ?? [],
-    );
+    const raExistingConfig =
+        raExistingBehavior?.flags?.[MODULE_ID]?.config ?? {};
 
-    if (selectedRegions.length !== 1) {
-        ui.notifications.warn(
-            `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
-        );
-
-        return;
-    }
-
-    const raRegion = selectedRegions[0]?.document;
-
-    if (!raRegion) {
-        ui.notifications.error(
-            "Region Automation: the selected Region document is unavailable.",
-        );
-
-        return;
-    }
-
-    const editorState = {
-        subject: "Search",
-        hint: "",
-        dc: 20,
-        targetType: "non-npc",
-    };
+    const editorState = raExistingBehavior
+        ? {
+            subject: String(raExistingConfig.subject ?? "Search"),
+            hint: String(raExistingConfig.hint ?? ""),
+            dc: Number(raExistingConfig.dc ?? 20),
+            targetType: String(raExistingConfig.targetType ?? "non-npc"),
+        }
+        : {
+            subject: "Search",
+            hint: "",
+            dc: 20,
+            targetType: "non-npc",
+        };
 
     let submittedConfiguration = null;
 
@@ -196,9 +224,9 @@ await (async () => {
                 "
             >
                 <p style="margin: 0;">
-                    Add a new Search automation to
+                    ${raExistingBehavior ? "Editing the Search automation on" : "Add a new Search automation to"}
                     <strong>
-                        ${escapeHTML(raRegion.name)}
+                        ${escapeHTML(raRegion?.name ?? "")}
                     </strong>.
                 </p>
 
@@ -299,7 +327,7 @@ await (async () => {
         const dialogResult =
             await foundry.applications.api.DialogV2.wait({
                 window: {
-                    title: "Add Search",
+                    title: raExistingBehavior ? "Edit Search" : "Add Search",
                 },
 
                 position: {
@@ -313,8 +341,8 @@ await (async () => {
                 buttons: [
                     {
                         action: "create",
-                        label: "Create",
-                        icon: "fa-solid fa-plus",
+                        label: raExistingBehavior ? "Save Changes" : "Create",
+                        icon: raExistingBehavior ? "fa-solid fa-floppy-disk" : "fa-solid fa-plus",
                         default: true,
 
                         callback: (
@@ -497,24 +525,43 @@ await (async () => {
     const behaviorName =
         `[RA-search] ${submittedConfiguration.subject}`;
 
+    if (raExistingBehavior) {
+        try {
+            await raExistingBehavior.update({
+                name: behaviorName,
+                [`flags.${MODULE_ID}.config`]: submittedConfiguration,
+            });
+
+            console.log(
+                "Region Automation | Search updated",
+                {
+                    behavior: raExistingBehavior,
+                    configuration:
+                        submittedConfiguration,
+                },
+            );
+
+            ui.notifications.info(
+                `Region Automation: updated "${behaviorName}".`,
+            );
+        } catch (error) {
+            console.error(
+                "Region Automation | Search could not be updated",
+                error,
+            );
+
+            ui.notifications.error(
+                "Region Automation: the Search automation could not be updated. See the console.",
+            );
+        }
+
+        return;
+    }
+
     const moduleData = {
         schemaVersion: 2,
         functionality: "search",
-
-        config: {
-            subject:
-                submittedConfiguration.subject,
-
-            hint:
-                submittedConfiguration.hint,
-
-            dc:
-                submittedConfiguration.dc,
-
-            targetType:
-                submittedConfiguration.targetType,
-        },
-
+        config: submittedConfiguration,
         triggeredTokenUuids: [],
     };
 

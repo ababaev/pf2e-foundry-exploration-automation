@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
 
 const MACRO_URL = new URL("../../scripts/world-macros/SearchConfigurationMacros.js", import.meta.url);
 
-async function runMacro() {
-    await runPastedMacro(MACRO_URL);
+async function runMacro(scope = {}) {
+    await runPastedMacro(MACRO_URL, scope);
 }
 
 function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
@@ -44,6 +44,83 @@ test("Search configuration: rejects when more than one Region is selected", asyn
     });
     await runMacro();
     assert.match(notifications.warn[0], /select exactly one Region/);
+});
+
+test("Search configuration: editing an existing Behavior does not require a Region to be selected on canvas", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "search",
+        config: { subject: "Old Cache", hint: "Old hint", dc: 15, targetType: "npc" },
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
+        { fields: { subject: "Updated Cache", hint: "Updated hint", dc: "22", targetType: "non-npc" } },
+    ]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.equal(existing.flags[MODULE_ID].config.subject, "Updated Cache");
+});
+
+test("Search configuration: editing an existing Behavior pre-fills unspecified fields from its current config", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "search",
+        config: { subject: "Old Cache", hint: "Old hint", dc: 15, targetType: "npc" },
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    // Only "subject" is supplied; hint/dc/targetType should fall back to
+    // the existing Behavior's current values, not the hardcoded defaults
+    // ("Search"/20/non-npc) a brand-new Search dialog would use.
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { subject: "Renamed" } }]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.deepEqual(existing.flags[MODULE_ID].config, {
+        subject: "Renamed",
+        hint: "Old hint",
+        dc: 15,
+        targetType: "npc",
+    });
+});
+
+test("Search configuration: editing updates the existing Behavior in place, preserving triggeredTokenUuids/schemaVersion/functionality", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "search",
+        config: { subject: "Old Cache", hint: "", dc: 15, targetType: "npc" },
+        triggeredTokenUuids: ["Token.already-triggered"],
+        parent: region,
+    });
+    existing.flags[MODULE_ID].schemaVersion = 2;
+    setupWorld({ regions: [] });
+
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
+        { fields: { subject: "Renamed Cache", hint: "", dc: "20", targetType: "npc" } },
+    ]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    // No new Behavior was created on the Region.
+    assert.equal(region.behaviors.length, 0);
+    assert.equal(existing.name, "[RA-search] Renamed Cache");
+    assert.equal(existing.flags[MODULE_ID].functionality, "search");
+    assert.equal(existing.flags[MODULE_ID].schemaVersion, 2);
+    assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
+});
+
+test("Search configuration: rejects a non-GM user trying to edit", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({ functionality: "search", config: { subject: "X", dc: 15, targetType: "npc" }, parent: region });
+    const { notifications } = setupWorld({ isGM: false });
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.match(notifications.error[0], /only a GM can edit a Search automation/);
 });
 
 test("Search configuration: valid submission creates a RegionBehavior wired through the socket dispatcher", async () => {

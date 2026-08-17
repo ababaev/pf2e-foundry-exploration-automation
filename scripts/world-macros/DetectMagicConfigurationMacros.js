@@ -397,73 +397,129 @@ await (async () => {
                     adjustment,
                 );
 
+    /*
+     * When invoked as `.execute({ existingBehavior })` (by
+     * RegionAutomationMainMacros.js's "Edit Existing" flow), this dialog
+     * edits that Behavior in place instead of creating a new one.
+     */
+    const raExistingBehavior =
+        typeof existingBehavior !== "undefined" && existingBehavior
+            ? existingBehavior
+            : null;
+
     if (!game.user.isGM) {
         ui.notifications.error(
-            "Region Automation: only a GM can add a Detect Magic automation.",
+            raExistingBehavior
+                ? "Region Automation: only a GM can edit a Detect Magic automation."
+                : "Region Automation: only a GM can add a Detect Magic automation.",
         );
 
         return;
     }
 
-    if (
-        !canvas?.ready ||
-        !canvas.scene
-    ) {
-        ui.notifications.error(
-            "Region Automation: there is no active Scene.",
-        );
+    let raRegion =
+        null;
 
-        return;
+    if (raExistingBehavior) {
+        raRegion =
+            raExistingBehavior.parent ??
+            null;
+    } else {
+        if (
+            !canvas?.ready ||
+            !canvas.scene
+        ) {
+            ui.notifications.error(
+                "Region Automation: there is no active Scene.",
+            );
+
+            return;
+        }
+
+        const selectedRegions =
+            Array.from(
+                canvas.regions
+                    ?.controlled ??
+                [],
+            );
+
+        if (
+            selectedRegions.length !==
+            1
+        ) {
+            ui.notifications.warn(
+                `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
+            );
+
+            return;
+        }
+
+        raRegion =
+            selectedRegions[0]
+                ?.document;
+
+        if (!raRegion) {
+            ui.notifications.error(
+                "Region Automation: the selected Region document is unavailable.",
+            );
+
+            return;
+        }
     }
 
-    const selectedRegions =
-        Array.from(
-            canvas.regions
-                ?.controlled ??
-            [],
-        );
+    const raExistingConfig =
+        raExistingBehavior?.flags?.[MODULE_ID]?.config ??
+        {};
 
-    if (
-        selectedRegions.length !==
-        1
-    ) {
-        ui.notifications.warn(
-            `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
-        );
+    const editorState = raExistingBehavior
+        ? {
+            subject:
+                String(
+                    raExistingConfig.subject ??
+                        "Magical Presence",
+                ),
 
-        return;
-    }
+            detection:
+                String(
+                    raExistingConfig.detection ??
+                        "Magic is present in this area.",
+                ),
 
-    const raRegion =
-        selectedRegions[0]
-            ?.document;
+            hint:
+                String(
+                    raExistingConfig.hint ??
+                        "",
+                ),
 
-    if (!raRegion) {
-        ui.notifications.error(
-            "Region Automation: the selected Region document is unavailable.",
-        );
+            baseDC:
+                Number(
+                    raExistingConfig.baseDC ??
+                        20,
+                ),
 
-        return;
-    }
+            skills:
+                normalizeSkills(
+                    raExistingConfig.skills,
+                ),
+        }
+        : {
+            subject:
+                "Magical Presence",
 
-    const editorState = {
-        subject:
-            "Magical Presence",
+            detection:
+                "Magic is present in this area.",
 
-        detection:
-            "Magic is present in this area.",
+            hint:
+                "",
 
-        hint:
-            "",
+            baseDC:
+                20,
 
-        baseDC:
-            20,
-
-        skills:
-            normalizeSkills(
-                DEFAULT_SKILLS,
-            ),
-    };
+            skills:
+                normalizeSkills(
+                    DEFAULT_SKILLS,
+                ),
+        };
 
     let submittedConfiguration =
         null;
@@ -730,10 +786,14 @@ await (async () => {
                 </style>
 
                 <p style="margin: 0;">
-                    Add a new Detect Magic automation to
+                    ${
+                        raExistingBehavior
+                            ? "Editing the Detect Magic automation on"
+                            : "Add a new Detect Magic automation to"
+                    }
                     <strong>
                         ${escapeHTML(
-                            raRegion.name,
+                            raRegion?.name ?? "",
                         )}
                     </strong>.
                 </p>
@@ -903,7 +963,9 @@ await (async () => {
             await foundry.applications.api.DialogV2.wait({
                 window: {
                     title:
-                        "Add Detect Magic",
+                        raExistingBehavior
+                            ? "Edit Detect Magic"
+                            : "Add Detect Magic",
                 },
 
                 position: {
@@ -925,10 +987,14 @@ await (async () => {
                             "create",
 
                         label:
-                            "Create",
+                            raExistingBehavior
+                                ? "Save Changes"
+                                : "Create",
 
                         icon:
-                            "fa-solid fa-plus",
+                            raExistingBehavior
+                                ? "fa-solid fa-floppy-disk"
+                                : "fa-solid fa-plus",
 
                         default:
                             true,
@@ -1469,6 +1535,44 @@ await (async () => {
 
     const behaviorName =
         `[RA-detect-magic] ${submittedConfiguration.subject}`;
+
+    if (raExistingBehavior) {
+        try {
+            await raExistingBehavior.update({
+                name:
+                    behaviorName,
+
+                [`flags.${MODULE_ID}.config`]:
+                    submittedConfiguration,
+            });
+
+            console.log(
+                "Region Automation | Detect Magic updated",
+                {
+                    behavior:
+                        raExistingBehavior,
+
+                    configuration:
+                        submittedConfiguration,
+                },
+            );
+
+            ui.notifications.info(
+                `Region Automation: updated "${behaviorName}".`,
+            );
+        } catch (error) {
+            console.error(
+                "Region Automation | Detect Magic could not be updated",
+                error,
+            );
+
+            ui.notifications.error(
+                "Region Automation: the Detect Magic automation could not be updated. See the console.",
+            );
+        }
+
+        return;
+    }
 
     const moduleData = {
         schemaVersion:

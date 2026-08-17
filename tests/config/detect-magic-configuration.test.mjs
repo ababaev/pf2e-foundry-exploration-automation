@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
 
 const MACRO_URL = new URL("../../scripts/world-macros/DetectMagicConfigurationMacros.js", import.meta.url);
 
-async function runMacro() {
-    await runPastedMacro(MACRO_URL);
+async function runMacro(scope = {}) {
+    await runPastedMacro(MACRO_URL, scope);
 }
 
 function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
@@ -35,6 +35,43 @@ test("Detect Magic configuration: rejects when zero Regions are selected", async
     const { notifications } = setupWorld({ regions: [] });
     await runMacro();
     assert.match(notifications.warn[0], /select exactly one Region/);
+});
+
+test("Detect Magic configuration: editing an existing Behavior pre-fills its current subject/detection/DC/skills and updates in place", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "detect-magic",
+        config: { subject: "Old Aura", detection: "Old detection", baseDC: 17, skills: { hard: ["occultism"] } },
+        triggeredTokenUuids: ["Token.already-triggered"],
+        parent: region,
+    });
+    setupWorld({ regions: [] });
+
+    globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { subject: "Renamed Aura" } }]).wait;
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.equal(region.behaviors.length, 0);
+    assert.equal(existing.name, "[RA-detect-magic] Renamed Aura");
+    assert.equal(existing.flags[MODULE_ID].config.subject, "Renamed Aura");
+    assert.equal(existing.flags[MODULE_ID].config.detection, "Old detection");
+    assert.equal(existing.flags[MODULE_ID].config.baseDC, 17);
+    assert.deepEqual(existing.flags[MODULE_ID].config.skills.hard, ["occultism"]);
+    assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
+});
+
+test("Detect Magic configuration: rejects a non-GM user trying to edit", async () => {
+    const region = makeRegion();
+    const existing = makeBehavior({
+        functionality: "detect-magic",
+        config: { subject: "X", detection: "Y", baseDC: 20, skills: {} },
+        parent: region,
+    });
+    const { notifications } = setupWorld({ isGM: false });
+
+    await runMacro({ existingBehavior: existing });
+
+    assert.match(notifications.error[0], /only a GM can edit a Detect Magic automation/);
 });
 
 test("Detect Magic configuration: valid submission keeps the default skill column (arcana/nature/occultism/religion under normal)", async () => {

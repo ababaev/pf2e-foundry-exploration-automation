@@ -303,62 +303,112 @@ await (async () => {
             ? `+${adjustment}`
             : String(adjustment);
 
+    /*
+     * When invoked as `.execute({ existingBehavior })` (by
+     * RegionAutomationMainMacros.js's "Edit Existing" flow), this dialog
+     * edits that Behavior in place instead of creating a new one.
+     */
+    const raExistingBehavior =
+        typeof existingBehavior !== "undefined" && existingBehavior
+            ? existingBehavior
+            : null;
+
     if (!game.user.isGM) {
         ui.notifications.error(
-            "Region Automation: only a GM can add an Investigation.",
+            raExistingBehavior
+                ? "Region Automation: only a GM can edit an Investigation."
+                : "Region Automation: only a GM can add an Investigation.",
         );
 
         return;
     }
 
-    if (!canvas?.ready || !canvas.scene) {
-        ui.notifications.error(
-            "Region Automation: there is no active Scene.",
-        );
+    let raRegion =
+        null;
 
-        return;
+    if (raExistingBehavior) {
+        raRegion =
+            raExistingBehavior.parent ??
+            null;
+    } else {
+        if (!canvas?.ready || !canvas.scene) {
+            ui.notifications.error(
+                "Region Automation: there is no active Scene.",
+            );
+
+            return;
+        }
+
+        const selectedRegions =
+            Array.from(
+                canvas.regions?.controlled ??
+                    [],
+            );
+
+        if (selectedRegions.length !== 1) {
+            ui.notifications.warn(
+                `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
+            );
+
+            return;
+        }
+
+        raRegion =
+            selectedRegions[0]?.document;
+
+        if (!raRegion) {
+            ui.notifications.error(
+                "Region Automation: the selected Region document is unavailable.",
+            );
+
+            return;
+        }
     }
 
-    const selectedRegions =
-        Array.from(
-            canvas.regions?.controlled ??
-                [],
-        );
+    const raExistingConfig =
+        raExistingBehavior?.flags?.[MODULE_ID]?.config ??
+        {};
 
-    if (selectedRegions.length !== 1) {
-        ui.notifications.warn(
-            `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
-        );
+    const editorState = raExistingBehavior
+        ? {
+            subject:
+                String(
+                    raExistingConfig.subject ??
+                        "Investigation",
+                ),
 
-        return;
-    }
+            hint:
+                String(
+                    raExistingConfig.hint ??
+                        "",
+                ),
 
-    const raRegion =
-        selectedRegions[0]?.document;
+            baseDC:
+                Number(
+                    raExistingConfig.baseDC ??
+                        20,
+                ),
 
-    if (!raRegion) {
-        ui.notifications.error(
-            "Region Automation: the selected Region document is unavailable.",
-        );
+            skills:
+                normalizeSkills(
+                    raExistingConfig.skills,
+                ),
+        }
+        : {
+            subject:
+                "Investigation",
 
-        return;
-    }
+            hint:
+                "",
 
-    const editorState = {
-        subject:
-            "Investigation",
+            baseDC:
+                20,
 
-        hint:
-            "",
-
-        baseDC:
-            20,
-
-        skills:
-            normalizeSkills(
-                DEFAULT_SKILLS,
-            ),
-    };
+            skills:
+                normalizeSkills(
+                    DEFAULT_SKILLS,
+                ),
+        };
 
     let submittedConfiguration =
         null;
@@ -612,10 +662,14 @@ await (async () => {
                 </style>
 
                 <p style="margin: 0;">
-                    Add a new Investigation to
+                    ${
+                        raExistingBehavior
+                            ? "Editing the Investigation automation on"
+                            : "Add a new Investigation to"
+                    }
                     <strong>
                         ${escapeHTML(
-                            raRegion.name,
+                            raRegion?.name ?? "",
                         )}
                     </strong>.
                 </p>
@@ -768,7 +822,9 @@ await (async () => {
             await foundry.applications.api.DialogV2.wait({
                 window: {
                     title:
-                        "Add Investigation",
+                        raExistingBehavior
+                            ? "Edit Investigation"
+                            : "Add Investigation",
                 },
 
                 position: {
@@ -790,10 +846,14 @@ await (async () => {
                             "save",
 
                         label:
-                            "Create",
+                            raExistingBehavior
+                                ? "Save Changes"
+                                : "Create",
 
                         icon:
-                            "fa-solid fa-plus",
+                            raExistingBehavior
+                                ? "fa-solid fa-floppy-disk"
+                                : "fa-solid fa-plus",
 
                         default:
                             true,
@@ -1261,6 +1321,44 @@ await (async () => {
 
     const behaviorName =
         `[RA-investigate] ${submittedConfiguration.subject}`;
+
+    if (raExistingBehavior) {
+        try {
+            await raExistingBehavior.update({
+                name:
+                    behaviorName,
+
+                [`flags.${MODULE_ID}.config`]:
+                    submittedConfiguration,
+            });
+
+            console.log(
+                "Region Automation | Investigation updated",
+                {
+                    behavior:
+                        raExistingBehavior,
+
+                    configuration:
+                        submittedConfiguration,
+                },
+            );
+
+            ui.notifications.info(
+                `Region Automation: updated "${behaviorName}".`,
+            );
+        } catch (error) {
+            console.error(
+                "Region Automation | Investigation could not be updated",
+                error,
+            );
+
+            ui.notifications.error(
+                "Region Automation: the Investigation could not be updated. See the console.",
+            );
+        }
+
+        return;
+    }
 
     const moduleData = {
         schemaVersion:

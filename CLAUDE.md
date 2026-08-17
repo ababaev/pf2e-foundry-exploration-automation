@@ -211,7 +211,8 @@ three-file shape in `scripts/world-macros/`:
 - **`*ConfigurationMacros.js`** — GM-facing `DialogV2` UI for attaching/configuring the automation on a
   selected Region (invoked from `RegionAutomationMainMacros.js`'s "Add Automation" dialog, which picks the
   right Configuration macro by name via `findSingleMacro`). Always provisioned as a `Macro` document (via
-  `macro-sync.js`), never an ES module, even once its activity is ported.
+  `macro-sync.js`), never an ES module, even once its activity is ported. Also doubles as the **edit** UI for
+  an existing Behavior of that activity — see "Editing an existing automation" below.
 - **`*FunctionMacros.js`** — orchestration run on `tokenEnter` (via the executor). A thin wrapper around
   `runTriggeredCheck` (see above) for every currently supported activity; a not-yet-ported future activity
   would instead be the full IIFE looking up `RegistrationMacros`/its RollHelper by `game.macros.getName(...)`
@@ -227,6 +228,37 @@ Shared helpers used by every triad:
   explicitly not yet handled here).
 - `UnregisterRegionMacros.js` — GM world macro that clears `triggeredTokenUuids` for every Region Automation
   Behavior on the selected Region.
+
+### Editing an existing automation
+
+`RegionAutomationMainMacros.js`'s first dialog has an "Edit Existing…" button alongside the four
+per-activity "Add" buttons. Picking it opens a second dialog listing every Region Automation Behavior on the
+selected Region (label: `"<Activity> — <Behavior name>"`, built from
+`raRegion.behaviors.filter(b => b.flags[MODULE_ID] is an object with a known functionality)` — the same
+predicate `UnregisterRegionMacros.js` uses); choosing one and confirming looks up that behavior's own
+`*ConfigurationMacros.js` by name (same `macroNames` map the "Add" path uses) and calls
+`macro.execute({ existingBehavior: chosenBehavior })` — the same `Macro.execute(scope)` convention used
+elsewhere in this paste-only population.
+
+Each `*ConfigurationMacros.js` detects this via the standard `typeof existingBehavior !== "undefined" ?
+existingBehavior : null` guard (`raExistingBehavior`), and if present:
+- Skips the GM-canvas Region-selection validation entirely (`raRegion` comes from
+  `raExistingBehavior.parent` instead of `canvas.regions.controlled`) — a GM can edit an automation without
+  having anything selected on the canvas.
+- Seeds `editorState` from `raExistingBehavior.flags[MODULE_ID].config` instead of the hardcoded defaults
+  (Investigate/DetectMagic route this through their existing `normalizeSkills()`, so a corrupted/partial
+  stored `skills` object is sanitized the same way a fresh submission would be).
+- Swaps the dialog's title/intro text/button label from "Add"/"Create" to "Edit"/"Save Changes".
+- On submit, updates the existing Behavior in place with `raExistingBehavior.update(...)` — a dotted-path
+  update to `name` and `flags.<MODULE_ID>.config` only — instead of `raRegion.createEmbeddedDocuments(...)`.
+  Touching only that one flag path leaves `schemaVersion`/`functionality`/`triggeredTokenUuids` untouched, so
+  editing a Behavior's settings never resets who's already triggered it.
+
+Every other part of the dialog (the field-validation loop, the skill-picker Add/Move UI, `wireDocumentDrop`)
+is unchanged and shared between add and edit — a `*ConfigurationMacros.js` file has exactly one branch point
+near the top (guard clauses + `editorState` seeding) and one near the bottom (create vs. update), everything
+in between operates purely on `editorState`/`submittedConfiguration` and doesn't know or care which mode
+it's in.
 
 ### Conventions to preserve
 
