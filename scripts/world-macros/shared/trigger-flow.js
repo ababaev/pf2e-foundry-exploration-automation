@@ -22,11 +22,16 @@
  * 6. Roll back the registration on technical failure only — a failed
  *    or critically failed check is a normal, successful run. Skipped
  *    when registration itself was skipped (nothing to roll back).
+ * 7. On a successful roll, duplicate its whispered chat message into the
+ *    GM-only log Journal (shared/gm-log.js) — every activity's RollHelper
+ *    result already carries the created ChatMessage, so this is generic
+ *    and needs no per-activity wiring.
  */
 
 import { MODULE_ID } from "../../module-id.js";
 import { checkExplorationActivity } from "../ExplorationActivityMacros.js";
 import { registerTokenTrigger } from "../RegistrationMacros.js";
+import { logToGMJournal } from "./gm-log.js";
 
 async function callWithResultBox(fn, args) {
     const resultBox = { value: null };
@@ -278,6 +283,14 @@ export async function runTriggeredCheck({
     }
 
     console.log(`Region Automation | ${label} completed`, rollResult);
+
+    if (rollResult.message?.content) {
+        await logToGMJournal({
+            regionName: resolvedRegion?.name ?? "Unknown Region",
+            actorName: resolvedActor?.name ?? "Unknown Character",
+            content: rollResult.message.content,
+        });
+    }
 
     return { ok: true, rolled: true, reason: "completed", result: rollResult };
 }

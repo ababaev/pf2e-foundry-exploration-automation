@@ -61,13 +61,14 @@ test("Search: an actor not performing Search never rolls or whispers a chat mess
 });
 
 test("Search: a searching actor rolls native Seek with the configured DC and target-type roll options", async () => {
-    const { chatMessages } = installBaseGlobals();
+    const { chatMessages, journals } = installBaseGlobals();
     const getLastCall = installSeekAction({ outcome: "success", total: 18, naturalRoll: 14, modifier: 4 });
     const actor = searchingActor();
     const token = makeToken(actor);
     const behavior = makeSearchBehavior({ dc: 18, targetType: "npc" });
+    const region = { name: "Trap Hallway" };
 
-    const result = await runSearch({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
+    const result = await runSearch({ behavior, event: { name: "tokenEnter", data: { token } }, region, scene: {}, token, actor });
 
     assert.equal(result.ok, true);
     assert.equal(result.rolled, true);
@@ -81,6 +82,11 @@ test("Search: a searching actor rolls native Seek with the configured DC and tar
     assert.ok(call.rollOptions.includes("pf2e-exploration-automation:search:npc"));
 
     assert.deepEqual(behavior.flags["pf2e-exploration-automation"].triggeredTokenUuids, [token.document.uuid]);
+
+    // The same GM-whispered result was also duplicated into the GM-only log Journal.
+    assert.equal(journals.length, 1);
+    assert.match(journals[0].pages[0].name, /^Trap Hallway — Searcher — /);
+    assert.ok(journals[0].pages[0].text.content.includes(chatMessages[0].content));
 });
 
 test("Search: a second tokenEnter for the same token does not roll again", async () => {

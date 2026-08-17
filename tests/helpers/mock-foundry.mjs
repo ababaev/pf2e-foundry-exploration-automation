@@ -19,6 +19,7 @@ const MODULE_ID = "pf2e-exploration-automation";
 export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
     const notifications = { info: [], warn: [], error: [] };
     const chatMessages = [];
+    const journals = [];
 
     const gmUser = { id: userId, active: true, isGM, settings: { showCheckDialogs: false } };
 
@@ -30,7 +31,9 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
         userId,
         modules: new Map(),
         macros: { find: () => undefined, filter: () => [], getName: () => undefined },
+        journal: { find: predicate => journals.find(predicate) },
         pf2e: {},
+        time: { worldTime: 0 },
     };
 
     globalThis.ui = {
@@ -43,6 +46,7 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
 
     globalThis.CONST = {
         DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, LIMITED: 1, OBSERVER: 2, OWNER: 3 },
+        JOURNAL_ENTRY_PAGE_FORMATS: { HTML: 1, MARKDOWN: 2 },
     };
 
     globalThis.ChatMessage = {
@@ -50,6 +54,24 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
             const message = { id: `msg-${chatMessages.length}`, ...data };
             chatMessages.push(message);
             return message;
+        },
+    };
+
+    globalThis.JournalEntry = {
+        create: async data => {
+            const pages = [];
+            const journal = {
+                id: `journal-${journals.length}`,
+                pages,
+                ...data,
+                async createEmbeddedDocuments(documentType, dataArray) {
+                    const created = dataArray.map((entry, index) => ({ ...entry, id: `page-${pages.length + index}` }));
+                    if (documentType === "JournalEntryPage") pages.push(...created);
+                    return created;
+                },
+            };
+            journals.push(journal);
+            return journal;
         },
     };
 
@@ -101,7 +123,7 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
      */
     globalThis.HTMLElement = globalThis.HTMLElement ?? class MockHTMLElement {};
 
-    return { notifications, chatMessages, gmUser };
+    return { notifications, chatMessages, journals, gmUser };
 }
 
 /** Registers a document so fromUuid(uuid) resolves it. */

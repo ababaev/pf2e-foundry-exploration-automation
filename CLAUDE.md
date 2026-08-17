@@ -195,13 +195,27 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   statistics themselves), and `getResultStyle(degree)` (chat-message CSS by degree; also used by Search,
   which gets its `outcome` from PF2e's native Seek action instead of computing it locally).
 - `shared/gm.js` — `getActiveGMs()`.
-- `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback orchestration
-  described above, parameterized by
+- `shared/gm-log.js` — `logToGMJournal({ regionName, actorName, content })`. Duplicates a successful roll's
+  already-whispered chat message into a persistent, GM-only Journal named `"ExplorationAutomation - Log"`
+  (`ownership.default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE`, find-or-created on first use, same pattern as
+  `macro-sync.js`'s `ensureFolder`). Each call appends one `JournalEntryPage` (`type: "text"`, name
+  `"<Region> — <Character> — <real-time timestamp>"`, `sort: Date.now()` so later pages always sort after
+  earlier ones), whose content includes both a game-time label (from PF2e's `game.pf2e.worldClock`, falling
+  back to a labeled raw `game.time.worldTime` seconds value if that API isn't present) and a real-time
+  timestamp, the character and Region names, and then the chat message's `content` HTML verbatim (already
+  escaped by the RollHelper that built it — only the region/character names get `escapeHTML`'d here). Called
+  from exactly one place — `runTriggeredCheck`, below — so no per-activity wiring is needed; failures are
+  caught and logged, never thrown, so a broken Journal can't take down the chat message a GM actually needs.
+- `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback → GM-log
+  orchestration described above, parameterized by
   `label`/`activity`/`requireExplorationActivity`/`skipRegistration`/`validateConfig`/`runRoll`
   (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw;
   `skipRegistration: true` skips the one-shot registration and its rollback — see "On-demand triggering"
   above). It imports `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through
-  the same `resultBox` contract those two paste-style files still expose internally.
+  the same `resultBox` contract those two paste-style files still expose internally. On a successful roll
+  (`rollResult.message` present), it also calls `logToGMJournal` — this fires for every trigger path (real
+  Region entry, the on-demand "run for the party" macro, skipRegistration or not) since they all funnel
+  through this one function.
 
 ### Per-activity macro triad
 

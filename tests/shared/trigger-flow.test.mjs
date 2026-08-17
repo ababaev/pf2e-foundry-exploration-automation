@@ -115,6 +115,40 @@ test("runTriggeredCheck: registers the token exactly once and runs the roll", as
     assert.deepEqual(behavior.flags["pf2e-exploration-automation"].triggeredTokenUuids, [token.document.uuid]);
 });
 
+test("runTriggeredCheck: a successful roll duplicates its chat message into the GM log Journal", async () => {
+    const { journals } = installBaseGlobals();
+    const actor = searchingActor();
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "search", config: { dc: 15 } });
+    const region = { uuid: "Region.mock", name: "Trap Hallway" };
+
+    await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            region,
+            runRoll: async () => ({ ok: true, message: { content: "<p>18 vs DC 15</p>" } }),
+        }),
+    );
+
+    assert.equal(journals.length, 1);
+    assert.equal(journals[0].pages.length, 1);
+    assert.match(journals[0].pages[0].name, /^Trap Hallway — Searcher — /);
+    assert.match(journals[0].pages[0].text.content, /<p>18 vs DC 15<\/p>/);
+});
+
+test("runTriggeredCheck: a roll with no chat message (e.g. a fake runRoll in another test) never logs to the Journal", async () => {
+    const { journals } = installBaseGlobals();
+    const actor = searchingActor();
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "search", config: { dc: 15 } });
+
+    await runTriggeredCheck(baseArgs({ actor, token, behavior, runRoll: async () => ({ ok: true }) }));
+
+    assert.equal(journals.length, 0);
+});
+
 test("runTriggeredCheck: a second run for the same token is a no-op ('already-triggered')", async () => {
     installBaseGlobals();
     const actor = searchingActor();
