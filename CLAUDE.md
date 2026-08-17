@@ -195,17 +195,23 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   statistics themselves), and `getResultStyle(degree)` (chat-message CSS by degree; also used by Search,
   which gets its `outcome` from PF2e's native Seek action instead of computing it locally).
 - `shared/gm.js` — `getActiveGMs()`.
-- `shared/gm-log.js` — `logToGMJournal({ regionName, actorName, content })`. Duplicates a successful roll's
-  already-whispered chat message into a persistent, GM-only Journal named `"ExplorationAutomation - Log"`
+- `shared/gm-log.js` — `logToGMJournal({ regionName, actorName, content })` and the `JOURNAL_NAME` constant
+  it's keyed on. Duplicates a successful roll's already-whispered chat message into a persistent, GM-only
+  Journal named `"Log: Important Events"` — deliberately generic, not module-branded, so other modules can
+  write their own GM-only events into the same shared log rather than each spawning their own
   (`ownership.default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE`, find-or-created on first use, same pattern as
-  `macro-sync.js`'s `ensureFolder`). Each call appends one `JournalEntryPage` (`type: "text"`, name
-  `"<Region> — <Character> — <real-time timestamp>"`, `sort: Date.now()` so later pages always sort after
-  earlier ones), whose content includes both a game-time label (from PF2e's `game.pf2e.worldClock`, falling
-  back to a labeled raw `game.time.worldTime` seconds value if that API isn't present) and a real-time
-  timestamp, the character and Region names, and then the chat message's `content` HTML verbatim (already
-  escaped by the RollHelper that built it — only the region/character names get `escapeHTML`'d here). Called
-  from exactly one place — `runTriggeredCheck`, below — so no per-activity wiring is needed; failures are
-  caught and logged, never thrown, so a broken Journal can't take down the chat message a GM actually needs.
+  `macro-sync.js`'s `ensureFolder`). Both `logToGMJournal` and the journal name are re-exported on the module
+  API (`main.js`) as `logToGMJournal`/`gmLogJournalName` for exactly that purpose — another module can call
+  `game.modules.get(MODULE_ID).api.logToGMJournal(...)` directly, or just target the same Journal by name
+  with its own page-creation logic if `regionName`/`actorName`/`content` doesn't fit its data. Each call
+  appends one `JournalEntryPage` (`type: "text"`, name `"<Region> — <Character> — <real-time timestamp>"`,
+  `sort: Date.now()` so later pages always sort after earlier ones), whose content includes both a game-time
+  label (from PF2e's `game.pf2e.worldClock`, falling back to a labeled raw `game.time.worldTime` seconds
+  value if that API isn't present) and a real-time timestamp, the character and Region names, and then the
+  chat message's `content` HTML verbatim (already escaped by the RollHelper that built it — only the
+  region/character names get `escapeHTML`'d here). Called from exactly one place in this module —
+  `runTriggeredCheck`, below — so no per-activity wiring is needed; failures are caught and logged, never
+  thrown, so a broken Journal can't take down the chat message a GM actually needs.
 - `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback → GM-log
   orchestration described above, parameterized by
   `label`/`activity`/`requireExplorationActivity`/`skipRegistration`/`validateConfig`/`runRoll`
