@@ -1,7 +1,14 @@
-import { test } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { installBaseGlobals } from "../helpers/mock-foundry.mjs";
-import { JOURNAL_NAME, logToGMJournal } from "../../scripts/world-macros/shared/gm-log.js";
+import { JOURNAL_NAME, logToGMJournal, __resetGMLogCacheForTests } from "../../scripts/world-macros/shared/gm-log.js";
+
+// gm-log.js memoizes the Journal lookup at module scope (deliberately, to
+// fix a real duplicate-Journal race) — that state otherwise leaks between
+// test()s in this file, since Node only imports the module once per file.
+beforeEach(() => {
+    __resetGMLogCacheForTests();
+});
 
 test("logToGMJournal: creates the log Journal on first use, with GM-only visibility", async () => {
     const { journals } = installBaseGlobals();
@@ -71,6 +78,23 @@ test("logToGMJournal: escapes region/character names but leaves the chat content
     assert.match(page.text.content, /&lt;script&gt;/);
     assert.match(page.text.content, /O&#039;Malley &amp; Sons/);
     assert.match(page.text.content, /<p>Safe pre-escaped content<\/p>/);
+});
+
+test("logToGMJournal: several Behaviors resolving on the same token around the same time create only one Journal (no duplicates)", async () => {
+    const { journals } = installBaseGlobals();
+
+    // Simulates a token triggering several Behaviors simultaneously (e.g.
+    // a Region with both a Search and a Saving Throw automation) -- before
+    // the fix, each of these independently saw "no Journal yet" and each
+    // created its own.
+    await Promise.all([
+        logToGMJournal({ regionName: "Trap Hallway", actorName: "Aria", content: "<p>Search result</p>" }),
+        logToGMJournal({ regionName: "Trap Hallway", actorName: "Aria", content: "<p>Saving Throw result</p>" }),
+        logToGMJournal({ regionName: "Trap Hallway", actorName: "Aria", content: "<p>Detect Magic result</p>" }),
+    ]);
+
+    assert.equal(journals.length, 1);
+    assert.equal(journals[0].pages.length, 3);
 });
 
 test("logToGMJournal: never throws, even if the Journal API is unavailable", async () => {

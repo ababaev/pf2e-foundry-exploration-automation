@@ -59,6 +59,13 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
 
     globalThis.JournalEntry = {
         create: async data => {
+            // A real Foundry document creation is never instantaneous (it's
+            // at minimum a socket round-trip). Yielding here for real lets
+            // concurrent callers actually interleave, so a test using this
+            // mock can catch a check-then-create race instead of masking it
+            // behind a same-tick, fully-synchronous mock.
+            await new Promise(resolve => setTimeout(resolve, 0));
+
             const pages = [];
             const journal = {
                 id: `journal-${journals.length}`,

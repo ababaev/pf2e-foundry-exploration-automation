@@ -50,16 +50,50 @@ function formatGameTime() {
 
 /**
  * Find or create the module's log Journal, filed with GM-only visibility.
+ *
+ * Memoized as a single in-flight promise so that several Behaviors
+ * resolving around the same time on the same token (e.g. a Region with
+ * both a Search and a Saving Throw automation) all await the *same*
+ * creation instead of each independently seeing "no Journal yet" and
+ * creating their own duplicate — the same class of check-then-create race
+ * RegistrationMacros.js's lock already guards against, just not previously
+ * handled here. Only protects a single GM client, same caveat as that
+ * lock (multi-GM synchronization isn't handled).
  */
+let logJournalPromise = null;
+
 async function ensureLogJournal() {
-    const existing = game.journal.find(journal => journal.name === JOURNAL_NAME);
+    if (!logJournalPromise) {
+        logJournalPromise = (async () => {
+            const existing = game.journal.find(journal => journal.name === JOURNAL_NAME);
 
-    if (existing) return existing;
+            if (existing) return existing;
 
-    return JournalEntry.create({
-        name: JOURNAL_NAME,
-        ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE },
-    });
+            return JournalEntry.create({
+                name: JOURNAL_NAME,
+                ownership: { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE },
+            });
+        })();
+
+        // Let a later call retry from scratch instead of staying stuck on
+        // a permanently-rejected cached promise.
+        logJournalPromise.catch(() => {
+            logJournalPromise = null;
+        });
+    }
+
+    return logJournalPromise;
+}
+
+/**
+ * Test-only escape hatch: clears the cached in-flight/resolved Journal
+ * promise. Without this, tests/helpers/mock-foundry.mjs's fresh `journal`
+ * mock per test() would be masked by whatever this module cached from an
+ * earlier test in the same file/process (see tests/README.md's note on
+ * module-level state persisting across test() calls).
+ */
+export function __resetGMLogCacheForTests() {
+    logJournalPromise = null;
 }
 
 /**
