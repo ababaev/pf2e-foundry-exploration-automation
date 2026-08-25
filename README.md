@@ -127,5 +127,5 @@ This thing will work on every character token entering the region.
 
 GM will get a message like that, and, in this example, can apply the damage by pressing the button. Or whatever else effect, which can be stored in GM Notes field.
 
-## IMPORTANT: Created with a heavy use of AI
+## IMPORTANT: The tool is created with a heavy use of AI
 
