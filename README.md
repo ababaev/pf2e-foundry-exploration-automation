@@ -41,6 +41,8 @@ Yes, as simple as that.
 
 ### Investigate
 
+If you have pressed "Investigation" on the Main Menu:
+
 <img src="docs/images/investigate_menu.png" alt="Investigation menu">
 
 This is an investigate check. You set up a default DC for this check, choose skills and try to define, how easy is it to find this out with that skill.
@@ -60,6 +62,26 @@ When a token of investigating character will enter the Region, GM will see a mes
 
 In this case, the roll was very average, but unfortunately it wasn't enough to unerstand the purpose of the room. Taking into an account that Esoteric Lore and Undead Lore doubtly can help a character to get it.
 GM may just omit this part.
+
+### Search
+
+If you have pressed "Search" on the Main Menu:
+
+<img src="docs/images/search_menu_filled.png" alt="Filled search window">
+
+This is slightly simpler. The only parameter we choose -- are we searching for an NPC, or an Item/Hazzard. Because there are feats that help in finding living beings, like "Sensate Gnome", or "Trap Finder" for traps.
+
+Then you press "Create".
+
+#### When triggered
+
+When a token of an searching character enters the Region, GM will see a message like that:
+
+<img src="docs/images/search_result.png" alt="Search result message">
+
+In this case a hero had noticed the sound, and GM may mention that.
+
+GM may decide to reduce the DC of the investigation check, which may affect the result, the result of investigation check can be found in journal "Log: Important Events".
 
 ## IMPORTANT: Created with a heavy use of AI
 
