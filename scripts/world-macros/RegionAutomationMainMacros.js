@@ -222,7 +222,7 @@ await (async () => {
                 <div
                     data-ra-npc-dropzone
                     style="
-                        border: 2px dashed var(--color-border-light-primary);
+                        border: 3px dashed var(--color-border-light-primary);
                         border-radius: 4px;
                         padding: 1rem;
                         min-height: 140px;
@@ -275,7 +275,15 @@ await (async () => {
                 width: 720,
             },
 
-            modal: true,
+            /*
+             * Not modal: a modal DialogV2 blocks pointer events on the
+             * rest of the page, including the canvas — which would make
+             * it impossible to drag a Token onto the NPC roster zone
+             * while this dialog is open. Every other dialog in this
+             * module (Edit Existing, every *ConfigurationMacros.js) is
+             * already non-modal for the same reason.
+             */
+            modal: false,
             rejectClose: false,
             content,
 
