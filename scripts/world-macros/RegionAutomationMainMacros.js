@@ -214,57 +214,52 @@ await (async () => {
 
             <div
                 style="
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 0.75rem;
+                    border: 1px solid var(--color-border-light-primary);
+                    border-radius: 4px;
+                    padding: 0.75rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
                 "
             >
-                <div
-                    data-ra-npc-dropzone
+                <p
                     style="
-                        border: 3px dashed var(--color-border-light-primary);
-                        border-radius: 4px;
-                        padding: 1rem;
-                        min-height: 140px;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 0.6rem;
-                        text-align: center;
-                        font-size: 0.9em;
-                        opacity: 0.85;
+                        margin: 0;
+                        font-weight: 600;
                     "
                 >
-                    Drag an NPC token here to add it to this Region’s roster.
+                    Add NPCs to Region
+                </p>
 
-                    <p
-                        style="
-                            margin: 0;
-                            font-size: 0.85em;
-                        "
-                    >
-                        — or —
-                    </p>
+                <p
+                    style="
+                        margin: 0;
+                        font-size: 0.85em;
+                        opacity: 0.8;
+                    "
+                >
+                    Switch to Token Controls, select one or more NPC tokens
+                    on the canvas, then click “Add Selected Token(s)”. This
+                    dialog can stay open while you do that.
+                </p>
 
-                    <button
-                        type="button"
-                        data-ra-npc-add-selected
-                    >
-                        <i
-                            class="fa-solid fa-plus"
-                        ></i>
+                <button
+                    type="button"
+                    data-ra-npc-add-selected
+                >
+                    <i
+                        class="fa-solid fa-plus"
+                    ></i>
 
-                        Add Selected Token(s)
-                    </button>
-                </div>
+                    Add Selected Token(s)
+                </button>
 
                 <div
                     style="
                         display: flex;
                         flex-direction: column;
                         gap: 0.35rem;
-                        max-height: 140px;
+                        max-height: 160px;
                         overflow-y: auto;
                     "
                 >
@@ -279,12 +274,9 @@ await (async () => {
                     opacity: 0.8;
                 "
             >
-                If dragging doesn’t work in your browser, switch to Token
-                Controls, select one or more NPC tokens on the canvas, then
-                click “Add Selected Token(s)” — this dialog can stay open
-                while you do that. Double-click an NPC below to remove it
-                from the roster. Existing single-activity automations are
-                still managed through the Region’s native Behaviors tab.
+                Double-click an NPC above to remove it from the roster.
+                Existing single-activity automations are still managed
+                through the Region’s native Behaviors tab.
             </p>
         </div>
     `;
@@ -297,7 +289,7 @@ await (async () => {
             },
 
             position: {
-                width: 720,
+                width: 640,
             },
 
             /*
@@ -332,11 +324,6 @@ await (async () => {
 
                     return;
                 }
-
-                const dropZone =
-                    root.querySelector(
-                        "[data-ra-npc-dropzone]",
-                    );
 
                 const rosterList =
                     root.querySelector(
@@ -430,158 +417,16 @@ await (async () => {
                         }
                     };
 
-                if (dropZone) {
-                    dropZone.addEventListener(
-                        "dragover",
-                        event =>
-                            event.preventDefault(),
-                    );
-
-                    dropZone.addEventListener(
-                        "drop",
-                        async event => {
-                            event.preventDefault();
-
-                            const TextEditorClass =
-                                foundry.applications
-                                    ?.ux
-                                    ?.TextEditor
-                                    ?.implementation ??
-                                foundry.applications
-                                    ?.ux
-                                    ?.TextEditor ??
-                                globalThis.TextEditor ??
-                                null;
-
-                            let data =
-                                null;
-
-                            try {
-                                data =
-                                    TextEditorClass?.getDragEventData
-                                        ? TextEditorClass.getDragEventData(
-                                              event,
-                                          )
-                                        : JSON.parse(
-                                              event.dataTransfer.getData(
-                                                  "text/plain",
-                                              ),
-                                          );
-                            } catch (error) {
-                                console.warn(
-                                    "Region Automation | Could not read dropped data",
-                                    error,
-                                );
-
-                                return;
-                            }
-
-                            if (
-                                data?.type !==
-                                    "Token" ||
-                                !data.uuid
-                            ) {
-                                ui.notifications.warn(
-                                    "Region Automation: drag a Token from the canvas to add it to the NPC roster.",
-                                );
-
-                                return;
-                            }
-
-                            let droppedToken =
-                                null;
-
-                            try {
-                                droppedToken =
-                                    await fromUuid(
-                                        data.uuid,
-                                    );
-                            } catch (error) {
-                                console.warn(
-                                    "Region Automation | Could not resolve dropped Token",
-                                    error,
-                                );
-                            }
-
-                            if (!droppedToken) {
-                                ui.notifications.warn(
-                                    "Region Automation: the dropped Token could not be resolved.",
-                                );
-
-                                return;
-                            }
-
-                            if (
-                                droppedToken.actor
-                                    ?.type !==
-                                "npc"
-                            ) {
-                                ui.notifications.warn(
-                                    "Region Automation: only NPC tokens can be added to this Region’s roster.",
-                                );
-
-                                return;
-                            }
-
-                            if (
-                                raRosterNpcs.some(
-                                    raNpc =>
-                                        raNpc.uuid ===
-                                        droppedToken.uuid,
-                                )
-                            ) {
-                                ui.notifications.warn(
-                                    `Region Automation: "${droppedToken.name}" is already in this Region’s roster.`,
-                                );
-
-                                return;
-                            }
-
-                            raRosterNpcs = [
-                                ...raRosterNpcs,
-                                {
-                                    uuid:
-                                        droppedToken.uuid,
-
-                                    tokenId:
-                                        droppedToken.id,
-
-                                    name:
-                                        droppedToken.name,
-                                },
-                            ];
-
-                            renderRoster();
-
-                            try {
-                                await saveRoster(
-                                    raRosterNpcs,
-                                );
-                            } catch (error) {
-                                console.error(
-                                    "Region Automation | Could not save the NPC roster",
-                                    error,
-                                );
-
-                                ui.notifications.error(
-                                    "Region Automation: the NPC roster could not be saved. See the console.",
-                                );
-                            }
-                        },
-                    );
-                }
-
                 /*
-                 * Fallback for when native drag-out from the canvas
-                 * doesn't reach this dialog at all (observed: with a
-                 * DialogV2 open, the canvas can stop responding to any
-                 * pointer input, everywhere, not just where the dialog
-                 * overlaps it — not just a modal-vs-non-modal thing).
-                 * This path needs no canvas interaction while the
-                 * dialog is open: the GM selects NPC tokens on the
-                 * canvas *before* opening this dialog, and
-                 * canvas.tokens.controlled still reflects that
-                 * selection afterward.
+                 * Adds the roster from canvas.tokens.controlled — the
+                 * GM selects NPC tokens on the canvas (switching to
+                 * Token Controls, which works fine with this dialog
+                 * open) and clicks this button. Native drag-and-drop
+                 * of a placed canvas Token isn't used here: unlike
+                 * sidebar/compendium documents, a Token is a PIXI
+                 * sprite, not a DOM element, so it can't be a native
+                 * HTML5 drag source — there is no `drop` event to
+                 * receive from dragging one.
                  */
                 const addSelectedButton =
                     root.querySelector(

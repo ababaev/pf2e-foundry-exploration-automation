@@ -330,8 +330,9 @@ it's in.
 
 ### NPC roster (data-only, groundwork for future automations)
 
-`RegionAutomationMainMacros.js`'s top dialog also manages a per-Region roster of NPC tokens (drag an NPC
-token onto the drop zone; double-click an entry to remove it) — this is groundwork for future automations
+`RegionAutomationMainMacros.js`'s top dialog also manages a per-Region roster of NPC tokens (select NPC
+tokens on the canvas and click "Add Selected Token(s)"; double-click an entry to remove it) — this is
+groundwork for future automations
 (e.g. an all-NPCs Stealth check on Search, or an all-NPCs Perception check on Avoid Notice), not a working
 automation yet. The roster is stored on its own service `RegionBehavior` (`functionality: "npc-roster"`,
 `flags[MODULE_ID].config.npcs: [{ uuid, tokenId, name }]`), created the moment the roster goes from empty to
@@ -348,16 +349,14 @@ It's deliberately inert: `system.events: []` and `system.source: ""` mean it can
 `config.npcs` should register a matching entry in `MODULE_FUNCTIONS` the same way any other activity is
 ported — see "Functionality dispatch and porting an activity" above.
 
-Token drops are read via the same `TextEditorClass.getDragEventData(event)` (falling back to
-`JSON.parse(event.dataTransfer.getData(...))`) pattern `wireDocumentDrop` already uses for Journal/Actor/Item
-links, just validating `data.type === "Token"` and the resolved token's `actor?.type === "npc"` instead. The
-dialog is non-modal (`modal: false`, same as every other dialog in this module) so the canvas stays
-interactive — but in practice a `DialogV2` window can leave the canvas completely unresponsive to pointer
-input anywhere on screen while it's open, not just where the window visually overlaps it, independent of
-`modal`. So drag-and-drop onto the zone is a *best-effort* input path, not the reliable one: the zone also has
-an "Add Selected Token(s)" button that reads `canvas.tokens.controlled` — a GM selects NPC tokens on the
-canvas *before* opening the dialog, and that selection is still readable afterward even if the canvas itself
-has gone unresponsive. Both paths funnel into the same `raRosterNpcs`/`saveRoster` state.
+There is deliberately no drag-and-drop of canvas tokens onto this dialog. A placed Token is a PIXI sprite
+drawn inside a single `<canvas>` element, not a DOM element, so unlike a sidebar/compendium document (which
+`wireDocumentDrop` in every `*ConfigurationMacros.js` *does* handle, via native HTML5 drag-and-drop) a canvas
+Token can't be a native drag source — there's no `drop` event to receive. Instead, "Add Selected Token(s)"
+reads `canvas.tokens.controlled` at click time: the GM switches the canvas to Token Controls and selects NPC
+tokens *while this dialog stays open* (it's non-modal, `modal: false`, same as every other dialog in this
+module, so the canvas remains interactive), then clicks the button. Selecting tokens before opening the
+dialog also works, since `canvas.tokens.controlled` reflects whatever was selected regardless of when.
 
 ### Conventions to preserve
 

@@ -208,93 +208,13 @@ test("RegionAutomationMainMacros end-to-end: editing dispatches into the real ru
     assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
 });
 
-function dropZoneResponse({ elements = {}, interact }) {
+function rosterDialogResponse({ elements = {}, interact }) {
     return {
         action: "cancel",
-        elements: { "[data-ra-npc-dropzone]": {}, "[data-ra-npc-list]": {}, ...elements },
+        elements: { "[data-ra-npc-list]": {}, "[data-ra-npc-add-selected]": {}, ...elements },
         interact,
     };
 }
-
-async function fireDrop(elements, payload) {
-    await elements["[data-ra-npc-dropzone]"].fire("drop", {
-        preventDefault() {},
-        dataTransfer: { getData: () => JSON.stringify(payload) },
-    });
-}
-
-test("RegionAutomationMainMacros: dropping an NPC token onto the roster zone adds it and creates the npc-roster Behavior", async () => {
-    const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
-
-    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
-    registerUuidDocument(npcToken.document.uuid, npcToken.document);
-
-    const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            interact: elements => fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid }),
-        }),
-    ]);
-    globalThis.foundry.applications.api.DialogV2.wait = wait;
-
-    await runMacro();
-
-    assert.equal(region.behaviors.length, 1);
-    const rosterBehavior = region.behaviors[0];
-    assert.equal(rosterBehavior.flags[MODULE_ID].functionality, "npc-roster");
-    assert.deepEqual(rosterBehavior.flags[MODULE_ID].config.npcs, [
-        { uuid: npcToken.document.uuid, tokenId: npcToken.document.id, name: "Goblin Scout" },
-    ]);
-});
-
-test("RegionAutomationMainMacros: dropping a non-NPC token, or a non-Token payload, is rejected and creates no Behavior", async () => {
-    const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
-
-    const characterToken = makeToken(makeActor({ name: "Hero", type: "character" }));
-    registerUuidDocument(characterToken.document.uuid, characterToken.document);
-    registerUuidDocument("JournalEntry.notes", { name: "Notes" });
-
-    const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            interact: async elements => {
-                await fireDrop(elements, { type: "Token", uuid: characterToken.document.uuid });
-                await fireDrop(elements, { type: "JournalEntry", uuid: "JournalEntry.notes" });
-            },
-        }),
-    ]);
-    globalThis.foundry.applications.api.DialogV2.wait = wait;
-
-    await runMacro();
-
-    assert.equal(region.behaviors.length, 0);
-    assert.match(notifications.warn.find(m => /only NPC tokens/.test(m)) ?? "", /only NPC tokens/);
-    assert.match(notifications.warn.find(m => /drag a Token/.test(m)) ?? "", /drag a Token/);
-});
-
-test("RegionAutomationMainMacros: dropping the same NPC token twice is rejected as a duplicate", async () => {
-    const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
-
-    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
-    registerUuidDocument(npcToken.document.uuid, npcToken.document);
-
-    const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            interact: async elements => {
-                await fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid });
-                await fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid });
-            },
-        }),
-    ]);
-    globalThis.foundry.applications.api.DialogV2.wait = wait;
-
-    await runMacro();
-
-    assert.equal(region.behaviors.length, 1);
-    assert.equal(region.behaviors[0].flags[MODULE_ID].config.npcs.length, 1);
-    assert.match(notifications.warn.find(m => /already in this Region/.test(m)) ?? "", /already in this Region/);
-});
 
 test("RegionAutomationMainMacros: double-clicking the last roster NPC removes it and deletes the npc-roster Behavior", async () => {
     const region = makeRegion();
@@ -310,7 +230,7 @@ test("RegionAutomationMainMacros: double-clicking the last roster NPC removes it
     setupWorld({ regions: [{ document: region }] });
 
     const { wait } = queueDialogResponses([
-        dropZoneResponse({
+        rosterDialogResponse({
             interact: async elements => {
                 const chip = elements["[data-ra-npc-list]"].querySelectorAll("[data-ra-chip]")[0];
                 await chip.fire("dblclick");
@@ -337,7 +257,7 @@ test("RegionAutomationMainMacros: reopening the dialog seeds the roster list fro
 
     setupWorld({ regions: [{ document: region }] });
 
-    const { wait, elementsByCall } = queueDialogResponses([dropZoneResponse({})]);
+    const { wait, elementsByCall } = queueDialogResponses([rosterDialogResponse({})]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
     await runMacro();
@@ -369,8 +289,7 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' adds every currently-c
     globalThis.canvas.tokens.controlled = [npcTokenA, npcTokenB, heroToken];
 
     const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            elements: { "[data-ra-npc-add-selected]": {} },
+        rosterDialogResponse({
             interact: clickAddSelected,
         }),
     ]);
@@ -391,8 +310,7 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' with nothing selected 
     globalThis.canvas.tokens.controlled = [];
 
     const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            elements: { "[data-ra-npc-add-selected]": {} },
+        rosterDialogResponse({
             interact: clickAddSelected,
         }),
     ]);
@@ -411,8 +329,7 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' with only non-NPC toke
     globalThis.canvas.tokens.controlled = [makeToken(makeActor({ name: "Hero", type: "character" }))];
 
     const { wait } = queueDialogResponses([
-        dropZoneResponse({
-            elements: { "[data-ra-npc-add-selected]": {} },
+        rosterDialogResponse({
             interact: clickAddSelected,
         }),
     ]);
