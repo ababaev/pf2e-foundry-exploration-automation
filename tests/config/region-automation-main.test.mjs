@@ -350,3 +350,76 @@ test("RegionAutomationMainMacros: reopening the dialog seeds the roster list fro
     assert.equal(region.behaviors.length, 1);
     assert.deepEqual(region.behaviors[0], rosterBehavior);
 });
+
+async function clickAddSelected(elements) {
+    await elements["[data-ra-npc-add-selected]"].fire("click");
+}
+
+test("RegionAutomationMainMacros: 'Add Selected Token(s)' adds every currently-controlled NPC token, skipping non-NPCs", async () => {
+    const region = makeRegion();
+    setupWorld({ regions: [{ document: region }] });
+
+    const npcTokenA = makeToken(makeActor({ name: "Goblin A", type: "npc" }));
+    const npcTokenB = makeToken(makeActor({ name: "Goblin B", type: "npc" }));
+    const heroToken = makeToken(makeActor({ name: "Hero", type: "character" }));
+
+    // canvas.tokens.controlled holds Token placeables (.document/.actor/.name),
+    // exactly the shape makeToken() returns — selected on canvas before the
+    // dialog was opened.
+    globalThis.canvas.tokens.controlled = [npcTokenA, npcTokenB, heroToken];
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            elements: { "[data-ra-npc-add-selected]": {} },
+            interact: clickAddSelected,
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 1);
+    const npcs = region.behaviors[0].flags[MODULE_ID].config.npcs;
+    assert.equal(npcs.length, 2);
+    assert.deepEqual(npcs.map(npc => npc.name).sort(), ["Goblin A", "Goblin B"]);
+});
+
+test("RegionAutomationMainMacros: 'Add Selected Token(s)' with nothing selected warns and creates no Behavior", async () => {
+    const region = makeRegion();
+    const { notifications } = setupWorld({ regions: [{ document: region }] });
+
+    globalThis.canvas.tokens.controlled = [];
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            elements: { "[data-ra-npc-add-selected]": {} },
+            interact: clickAddSelected,
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 0);
+    assert.match(notifications.warn.find(m => /select one or more NPC tokens/.test(m)) ?? "", /select one or more NPC tokens/);
+});
+
+test("RegionAutomationMainMacros: 'Add Selected Token(s)' with only non-NPC tokens selected warns and creates no Behavior", async () => {
+    const region = makeRegion();
+    const { notifications } = setupWorld({ regions: [{ document: region }] });
+
+    globalThis.canvas.tokens.controlled = [makeToken(makeActor({ name: "Hero", type: "character" }))];
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            elements: { "[data-ra-npc-add-selected]": {} },
+            interact: clickAddSelected,
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 0);
+    assert.match(notifications.warn.find(m => /none of the selected tokens are NPCs/.test(m)) ?? "", /none of the selected tokens are NPCs/);
+});

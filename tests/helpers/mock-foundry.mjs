@@ -98,7 +98,7 @@ export function installBaseGlobals({ isGM = true, userId = "gm-1" } = {}) {
         ready: true,
         scene: { uuid: "Scene.mock" },
         regions: { controlled: [] },
-        tokens: { placeables: [] },
+        tokens: { placeables: [], controlled: [] },
     };
 
     globalThis.__uuidDocuments = {};

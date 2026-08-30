@@ -346,7 +346,14 @@ ported — see "Functionality dispatch and porting an activity" above.
 
 Token drops are read via the same `TextEditorClass.getDragEventData(event)` (falling back to
 `JSON.parse(event.dataTransfer.getData(...))`) pattern `wireDocumentDrop` already uses for Journal/Actor/Item
-links, just validating `data.type === "Token"` and the resolved token's `actor?.type === "npc"` instead.
+links, just validating `data.type === "Token"` and the resolved token's `actor?.type === "npc"` instead. The
+dialog is non-modal (`modal: false`, same as every other dialog in this module) so the canvas stays
+interactive — but in practice a `DialogV2` window can leave the canvas completely unresponsive to pointer
+input anywhere on screen while it's open, not just where the window visually overlaps it, independent of
+`modal`. So drag-and-drop onto the zone is a *best-effort* input path, not the reliable one: the zone also has
+an "Add Selected Token(s)" button that reads `canvas.tokens.controlled` — a GM selects NPC tokens on the
+canvas *before* opening the dialog, and that selection is still readable afterward even if the canvas itself
+has gone unresponsive. Both paths funnel into the same `raRosterNpcs`/`saveRoster` state.
 
 ### Conventions to preserve
 

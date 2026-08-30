@@ -227,14 +227,36 @@ await (async () => {
                         padding: 1rem;
                         min-height: 140px;
                         display: flex;
+                        flex-direction: column;
                         align-items: center;
                         justify-content: center;
+                        gap: 0.6rem;
                         text-align: center;
                         font-size: 0.9em;
                         opacity: 0.85;
                     "
                 >
                     Drag an NPC token here to add it to this Region’s roster.
+
+                    <p
+                        style="
+                            margin: 0;
+                            font-size: 0.85em;
+                        "
+                    >
+                        — or —
+                    </p>
+
+                    <button
+                        type="button"
+                        data-ra-npc-add-selected
+                    >
+                        <i
+                            class="fa-solid fa-plus"
+                        ></i>
+
+                        Add Selected Token(s)
+                    </button>
                 </div>
 
                 <div
@@ -257,9 +279,12 @@ await (async () => {
                     opacity: 0.8;
                 "
             >
-                Double-click an NPC below to remove it from the roster.
-                Existing single-activity automations are still managed
-                through the Region’s native Behaviors tab.
+                If dragging doesn’t work in your browser, select one or more
+                NPC tokens on the canvas <strong>before</strong> opening this
+                dialog, then click “Add Selected Token(s)”. Double-click an
+                NPC below to remove it from the roster. Existing
+                single-activity automations are still managed through the
+                Region’s native Behaviors tab.
             </p>
         </div>
     `;
@@ -527,6 +552,135 @@ await (async () => {
                             ];
 
                             renderRoster();
+
+                            try {
+                                await saveRoster(
+                                    raRosterNpcs,
+                                );
+                            } catch (error) {
+                                console.error(
+                                    "Region Automation | Could not save the NPC roster",
+                                    error,
+                                );
+
+                                ui.notifications.error(
+                                    "Region Automation: the NPC roster could not be saved. See the console.",
+                                );
+                            }
+                        },
+                    );
+                }
+
+                /*
+                 * Fallback for when native drag-out from the canvas
+                 * doesn't reach this dialog at all (observed: with a
+                 * DialogV2 open, the canvas can stop responding to any
+                 * pointer input, everywhere, not just where the dialog
+                 * overlaps it — not just a modal-vs-non-modal thing).
+                 * This path needs no canvas interaction while the
+                 * dialog is open: the GM selects NPC tokens on the
+                 * canvas *before* opening this dialog, and
+                 * canvas.tokens.controlled still reflects that
+                 * selection afterward.
+                 */
+                const addSelectedButton =
+                    root.querySelector(
+                        "[data-ra-npc-add-selected]",
+                    );
+
+                if (addSelectedButton) {
+                    addSelectedButton.addEventListener(
+                        "click",
+                        async () => {
+                            const controlledTokens =
+                                Array.from(
+                                    canvas.tokens
+                                        ?.controlled ??
+                                        [],
+                                );
+
+                            if (
+                                controlledTokens.length ===
+                                0
+                            ) {
+                                ui.notifications.warn(
+                                    "Region Automation: select one or more NPC tokens on the canvas first, then click “Add Selected Token(s)”.",
+                                );
+
+                                return;
+                            }
+
+                            const selectedNpcTokens =
+                                controlledTokens.filter(
+                                    raToken =>
+                                        raToken.actor
+                                            ?.type ===
+                                        "npc",
+                                );
+
+                            if (
+                                selectedNpcTokens.length ===
+                                0
+                            ) {
+                                ui.notifications.warn(
+                                    "Region Automation: none of the selected tokens are NPCs.",
+                                );
+
+                                return;
+                            }
+
+                            let addedCount =
+                                0;
+
+                            for (
+                                const raToken
+                                of selectedNpcTokens
+                            ) {
+                                const tokenUuid =
+                                    raToken.document
+                                        ?.uuid ??
+                                    raToken.uuid;
+
+                                if (
+                                    raRosterNpcs.some(
+                                        raNpc =>
+                                            raNpc.uuid ===
+                                            tokenUuid,
+                                    )
+                                ) {
+                                    continue;
+                                }
+
+                                raRosterNpcs = [
+                                    ...raRosterNpcs,
+                                    {
+                                        uuid:
+                                            tokenUuid,
+
+                                        tokenId:
+                                            raToken.document
+                                                ?.id ??
+                                            raToken.id,
+
+                                        name:
+                                            raToken.document
+                                                ?.name ??
+                                            raToken.name,
+                                    },
+                                ];
+
+                                addedCount += 1;
+                            }
+
+                            renderRoster();
+
+                            if (addedCount === 0) {
+                                ui.notifications.warn(
+                                    "Region Automation: the selected NPC(s) are already in this Region’s roster.",
+                                );
+
+                                return;
+                            }
 
                             try {
                                 await saveRoster(
