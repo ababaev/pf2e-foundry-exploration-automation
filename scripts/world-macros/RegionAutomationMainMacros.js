@@ -279,12 +279,12 @@ await (async () => {
                     opacity: 0.8;
                 "
             >
-                If dragging doesn’t work in your browser, select one or more
-                NPC tokens on the canvas <strong>before</strong> opening this
-                dialog, then click “Add Selected Token(s)”. Double-click an
-                NPC below to remove it from the roster. Existing
-                single-activity automations are still managed through the
-                Region’s native Behaviors tab.
+                If dragging doesn’t work in your browser, switch to Token
+                Controls, select one or more NPC tokens on the canvas, then
+                click “Add Selected Token(s)” — this dialog can stay open
+                while you do that. Double-click an NPC below to remove it
+                from the roster. Existing single-activity automations are
+                still managed through the Region’s native Behaviors tab.
             </p>
         </div>
     `;
