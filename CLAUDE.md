@@ -38,32 +38,36 @@ bundler/transpiler unless explicitly asked.
 ### Two code populations
 
 - `scripts/main.js`, `scripts/socket.js`, `scripts/executor.js`, `scripts/migrate-behaviors.js`,
-  `scripts/macro-sync.js`, `scripts/module-id.js`, `scripts/manual-trigger.js` — the actual module code,
-  loaded via `module.json`. Normal camelCase, standard JS module conventions, free to `import` from anywhere
-  else in this population.
+  `scripts/macro-sync.js`, `scripts/configuration-dialogs.js`, `scripts/module-id.js`,
+  `scripts/manual-trigger.js` — the actual module code, loaded via `module.json`. Normal camelCase, standard
+  JS module conventions, free to `import` from anywhere else in this population.
 - `scripts/world-macros/*.js` — source-of-truth copies of Foundry **world Macros**: scripts that get loaded
-  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Seven of them
-  (everything except `ExplorationActivityMacros.js` and `RegistrationMacros.js`, see below) are looked up by
-  name at runtime (`game.macros.getName(...)`/`.find(...)`) by `RegionAutomationMainMacros.js` — so a matching
-  `Macro` document must exist in the world. A GM does **not** paste these in by hand: `scripts/macro-sync.js`
-  creates/updates them automatically as the primary GM reaches `ready`, fetching each one's live source
-  straight from these same files (see "World Macro provisioning" below). `ExplorationActivityMacros.js` and
-  `RegistrationMacros.js` are the two files in this population not currently looked up by name by anything —
-  every activity now imports `checkExplorationActivity`/`registerTokenTrigger` from them directly as ES
-  modules instead (via `shared/trigger-flow.js`) — kept in the same paste-compatible style for consistency in
-  case a future activity needs to look one up by name again, and deliberately excluded from `macro-sync.js`'s
-  list until then (a top-level `export` — needed for the ES import — is invalid inside a Macro's command
-  body, so Foundry rejects the document if `macro-sync.js` tries to create/update it from either file).
+  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Only 3 of them —
+  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js` — still need
+  to exist as `Macro` documents at all, and purely because a GM clicks them directly from the hotbar/macro
+  directory; nothing in the codebase looks any of the three up by name. A GM does **not** paste these in by
+  hand: `scripts/macro-sync.js` creates/updates them automatically as the primary GM reaches `ready`, fetching
+  each one's live source straight from these same files (see "World Macro provisioning" below).
+  `ExplorationActivityMacros.js`, `RegistrationMacros.js`, and the 4 `*ConfigurationMacros.js` files are all
+  deliberately excluded from `macro-sync.js`'s list — every one of them is a real ES module now
+  (`export async function ...`), imported directly rather than looked up by
+  `game.macros.getName(...)`/`.find(...)` (`checkExplorationActivity`/`registerTokenTrigger` via
+  `shared/trigger-flow.js`; the 4 Configuration dialogs via `scripts/configuration-dialogs.js`, called from
+  `RegionAutomationMainMacros.js` through the module API — see "Editing an existing automation" below). A
+  top-level `export` is invalid inside a Macro's command body, so Foundry would reject any of them if
+  `macro-sync.js` tried to create/update them as Documents.
 
-  Every file in this population uses an `ra`-prefixed variable naming convention (`raBehavior`, `raToken`,
-  `raResult`, ...) and `typeof x !== "undefined"` guards instead of relying on parameter defaults, because
-  inside a `Macro`'s script body those names are Foundry-injected scope variables that may not exist at all —
-  referencing an undeclared variable directly would throw. Preserve this whenever touching these files.
+  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, and `TriggerRegionForPartyMacros.js` use an
+  `ra`-prefixed variable naming convention (`raBehavior`, `raToken`, `raResult`, ...) and
+  `typeof x !== "undefined"` guards instead of relying on parameter defaults, because inside a `Macro`'s
+  script body those names are Foundry-injected scope variables that may not exist at all — referencing an
+  undeclared variable directly would throw. Preserve this whenever touching these files.
 
-  Every activity's `*FunctionMacros.js` and `*RollHelperMacros.js` files, by contrast, are **only** loaded as
-  real ES modules (imported from `executor.js` / each other / `scripts/world-macros/shared/`) — nothing looks
-  them up by macro name anymore, so they are free to use normal parameter defaults, `import`, and plain
-  `return` instead of the `resultBox` sidecar pattern (see below).
+  Every other file under `scripts/world-macros/` — the 4 `*ConfigurationMacros.js`, every activity's
+  `*FunctionMacros.js`/`*RollHelperMacros.js`, `ExplorationActivityMacros.js`, `RegistrationMacros.js` — is
+  by contrast **only** loaded as a real ES module (imported from `executor.js` / `configuration-dialogs.js` /
+  each other / `scripts/world-macros/shared/`), so they're free to use normal parameter defaults, `import`,
+  and plain `return` instead of the `resultBox` sidecar pattern (see below).
 
 Whitespace style in the paste-only macro files (listed above) is unusually vertical (one value per line,
 e.g. `const x =\n    1;`) — match it there. The module-only files use conventional, denser formatting.
@@ -133,17 +137,18 @@ route prefix), then creates a `Macro` document with that name/command if none ex
 one in place if its stored `command` has drifted from the source — so a `git pull` + world reload is the
 entire update story, never a manual re-paste. Managed macros are filed under a `"PF2e Exploration
 Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
-client ran the sync) can see and run them. `RegionAutomationMainMacros`, `UnregisterRegionMacros`, and
-`TriggerRegionForPartyMacros` (see below) get a custom `img` under `assets/icons/`; the rest fall back to a
-default core Foundry icon. Every created macro carries `flags[MODULE_ID].managed = true`. On every run,
-`syncWorldMacros()` also deletes any `type: "script"` macro carrying that flag whose name is no longer in
-`MANAGED_MACROS` (`pruneOrphanedMacros`) — this is what keeps a macro from a since-removed table entry (e.g.
-`SavingThrowFunctionMacros`/`SavingThrowRollHelperMacros`/`RegistrationMacros`, orphaned when Saving Throw was
-ported to ES-only) from lingering forever; it only touches macros carrying the flag, so anything a GM created
-or renamed into the folder by hand is left alone. This does **not** run when the module itself is disabled —
-Foundry gives modules no hook for that, so the Macro folder and any macros in it are untouched until the
-module is enabled again and a sync actually runs. Exposed on the module API as `syncWorldMacros` for manual
-re-runs.
+client ran the sync) can see and run them. All 3 entries — `RegionAutomationMainMacros`,
+`UnregisterRegionMacros`, `TriggerRegionForPartyMacros` — get a custom `img` under `assets/icons/`; a future
+entry with no custom `img` falls back to a default core Foundry icon. Every created macro carries
+`flags[MODULE_ID].managed = true`. On every run, `syncWorldMacros()` also deletes any `type: "script"` macro
+carrying that flag whose name is no longer in `MANAGED_MACROS` (`pruneOrphanedMacros`) — this is what keeps a
+macro from a since-removed table entry (e.g. `SavingThrowFunctionMacros`/`SavingThrowRollHelperMacros`/
+`RegistrationMacros` when Saving Throw was ported to ES-only, or the 4 `*ConfigurationMacros.js` once they
+were ported — see "Editing an existing automation" below) from lingering forever; it only touches macros
+carrying the flag, so anything a GM created or renamed into the folder by hand is left alone. This does
+**not** run when the module itself is disabled — Foundry gives modules no hook for that, so the Macro folder
+and any macros in it are untouched until the module is enabled again and a sync actually runs. Exposed on the
+module API as `syncWorldMacros` for manual re-runs.
 
 ### Functionality dispatch and porting an activity
 
@@ -174,10 +179,10 @@ To port a future activity, follow `SearchFunctionMacros.js` as the template — 
    that imports those from `scripts/world-macros/shared/{html,checks,gm}.js` and simply `return result;` at
    every exit point instead of `publishResult(result); return;`.
 3. Register the function in `MODULE_FUNCTIONS` in `executor.js`.
-4. Update the activity's `*ConfigurationMacros.js` `BEHAVIOR_SOURCE` template string to the
-   `moduleApi.requestBehaviorExecution(...)` dispatcher (copy it from `SearchConfigurationMacros.js`) so
-   newly-created Behaviors get the socket-routed source immediately instead of relying on the
-   `createRegionBehavior` migration hook to fix it up after the fact.
+4. A new activity's `*ConfigurationMacros.js` should `import { GENERIC_BEHAVIOR_SOURCE as BEHAVIOR_SOURCE }
+   from "../migrate-behaviors.js";` (every existing one already does) so newly-created Behaviors get the
+   socket-routed source immediately instead of relying on the `createRegionBehavior` migration hook to fix it
+   up after the fact.
 5. If the not-yet-ported `*FunctionMacros.js` looked up `RegistrationMacros` via `game.macros.getName(...)`,
    drop that lookup — `shared/trigger-flow.js` already does `import { registerTokenTrigger } from
    "../RegistrationMacros.js"`, so this happens automatically once step 1 is done.
@@ -229,10 +234,11 @@ Each exploration activity (`Search`, `Investigate`, `DetectMagic`, `SavingThrow`
 three-file shape in `scripts/world-macros/`:
 
 - **`*ConfigurationMacros.js`** — GM-facing `DialogV2` UI for attaching/configuring the automation on a
-  selected Region (invoked from `RegionAutomationMainMacros.js`'s "Add Automation" dialog, which picks the
-  right Configuration macro by name via `findSingleMacro`). Always provisioned as a `Macro` document (via
-  `macro-sync.js`), never an ES module, even once its activity is ported. Also doubles as the **edit** UI for
-  an existing Behavior of that activity — see "Editing an existing automation" below.
+  selected Region, `export async function run<Activity>Configuration({ region, existingBehavior } = {})`.
+  Invoked from `RegionAutomationMainMacros.js`'s "Add Automation" dialog via
+  `raApi.openConfigurationDialog({ activity, region, existingBehavior })` — see
+  `scripts/configuration-dialogs.js`'s dispatch table and "Editing an existing automation" below. Also
+  doubles as the **edit** UI for an existing Behavior of that activity.
 - **`*FunctionMacros.js`** — orchestration run on `tokenEnter` (via the executor). A thin wrapper around
   `runTriggeredCheck` (see above) for every currently supported activity; a not-yet-ported future activity
   would instead be the full IIFE looking up `RegistrationMacros`/its RollHelper by `game.macros.getName(...)`
@@ -255,16 +261,23 @@ Shared helpers used by every triad:
 per-activity "Add" buttons. Picking it opens a second dialog listing every Region Automation Behavior on the
 selected Region (label: `"<Activity> — <Behavior name>"`, built from
 `raRegion.behaviors.filter(b => b.flags[MODULE_ID] is an object with a known functionality)` — the same
-predicate `UnregisterRegionMacros.js` uses); choosing one and confirming looks up that behavior's own
-`*ConfigurationMacros.js` by name (same `macroNames` map the "Add" path uses) and calls
-`macro.execute({ existingBehavior: chosenBehavior })` — the same `Macro.execute(scope)` convention used
-elsewhere in this paste-only population.
+predicate `UnregisterRegionMacros.js` uses); choosing one and confirming calls
+`raApi.openConfigurationDialog({ activity: chosenBehavior's functionality, region: raRegion, existingBehavior:
+chosenBehavior })` — `raApi` is `game.modules.get(MODULE_ID).api`, resolved lazily right before each dispatch
+call (add or edit) so a GM picking "Edit Existing" on a Region with zero automations never needs the module
+API at all. `scripts/configuration-dialogs.js`'s `openConfigurationDialog` looks up the right
+`run<Activity>Configuration` function by activity slug and calls it with the same `{ region, existingBehavior
+}` shape either path uses — the Add path just omits `existingBehavior`.
 
-Each `*ConfigurationMacros.js` detects this via the standard `typeof existingBehavior !== "undefined" ?
-existingBehavior : null` guard (`raExistingBehavior`), and if present:
-- Skips the GM-canvas Region-selection validation entirely (`raRegion` comes from
-  `raExistingBehavior.parent` instead of `canvas.regions.controlled`) — a GM can edit an automation without
-  having anything selected on the canvas.
+Each `run<Activity>Configuration` detects edit mode via `const raExistingBehavior = existingBehavior ?? null;`
+and, if present:
+- Resolves `raRegion` from `region ?? raExistingBehavior?.parent ?? null` instead of re-deriving it from
+  `canvas.regions.controlled` — `RegionAutomationMainMacros.js` already resolved `raRegion` once, up front,
+  for both the Add and Edit paths, so the callee just trusts what it's given (falling back to
+  `existingBehavior.parent` is defensive, not load-bearing in the normal flow). If neither yields a Region,
+  the function reports "the Region is unavailable" and returns — the GM-canvas-selection validation that used
+  to live here (no active Scene / zero-or-multiple Regions selected) is now solely `RegionAutomationMainMacros.js`'s
+  responsibility, since it's the only caller and always resolves the Region before dispatching.
 - Seeds `editorState` from `raExistingBehavior.flags[MODULE_ID].config` instead of the hardcoded defaults
   (Investigate/DetectMagic route this through their existing `normalizeSkills()`, so a corrupted/partial
   stored `skills` object is sanitized the same way a fresh submission would be).

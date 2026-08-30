@@ -7,10 +7,6 @@ const MANAGED_NAMES = [
     "RegionAutomationMainMacros",
     "UnregisterRegionMacros",
     "TriggerRegionForPartyMacros",
-    "SearchConfigurationMacros",
-    "InvestigateConfigurationMacros",
-    "DetectMagicConfigurationMacros",
-    "SavingThrowConfigurationMacros",
 ];
 
 function installMacroWorld() {
@@ -119,14 +115,14 @@ test("syncWorldMacros: a changed source file is synced as an update, not a dupli
 
     await syncWorldMacros();
 
-    installFetch({ SearchConfigurationMacros: "// updated Search source" });
+    installFetch({ TriggerRegionForPartyMacros: "// updated TriggerRegionForParty source" });
     const summary = await syncWorldMacros();
 
     assert.equal(summary.updated, 1);
     assert.equal(summary.created, 0);
     assert.equal(macros.length, MANAGED_NAMES.length);
-    const search = macros.find(m => m.name === "SearchConfigurationMacros");
-    assert.equal(search.command, "// updated Search source");
+    const trigger = macros.find(m => m.name === "TriggerRegionForPartyMacros");
+    assert.equal(trigger.command, "// updated TriggerRegionForParty source");
 });
 
 test("syncWorldMacros: prunes a macro it previously managed that's no longer in the table", async () => {

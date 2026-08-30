@@ -26,17 +26,17 @@ const DEFAULT_ICON = "icons/svg/dice-target.svg";
  * Every world Macro this module provisions, and the world-macros/
  * source file it's kept in sync with.
  *
- * ExplorationActivityMacros.js and RegistrationMacros.js are
- * deliberately absent. Both files are `export async function ...`
- * wrappers so shared/trigger-flow.js can import them directly
- * (checkExplorationActivity, registerTokenTrigger) — and a top-level
- * `export` is invalid inside a Macro's command body, so Foundry
- * rejects it during validation. Now that every supported
- * functionality (search/investigate/detect-magic/saving-throw) has
- * been ported into the module, nothing looks either of them up by
- * name anymore; add an entry back here only if a future *FunctionMacros.js
- * reverts to looking one of them up via game.macros.getName(...)
- * instead of importing it.
+ * Only the 3 GM-clicked entry points remain here. ExplorationActivityMacros.js,
+ * RegistrationMacros.js, and the 4 *ConfigurationMacros.js files are all
+ * deliberately absent — every one of them is now an `export async
+ * function ...` real ES module, imported directly (checkExplorationActivity/
+ * registerTokenTrigger via shared/trigger-flow.js; the 4 Configuration
+ * dialogs via scripts/configuration-dialogs.js, called from
+ * RegionAutomationMainMacros.js through the module API). A top-level
+ * `export` is invalid inside a Macro's command body, so Foundry would
+ * reject any of them if macro-sync.js tried to create/update them. Add
+ * an entry back here only if a future file reverts to being looked up
+ * via game.macros.getName(...)/.find(...) instead of imported.
  */
 const MANAGED_MACROS = Object.freeze([
     {
@@ -53,22 +53,6 @@ const MANAGED_MACROS = Object.freeze([
         name: "TriggerRegionForPartyMacros",
         file: "./world-macros/TriggerRegionForPartyMacros.js",
         img: `modules/${MODULE_ID}/assets/icons/region-manual-automation-run.png`,
-    },
-    {
-        name: "SearchConfigurationMacros",
-        file: "./world-macros/SearchConfigurationMacros.js",
-    },
-    {
-        name: "InvestigateConfigurationMacros",
-        file: "./world-macros/InvestigateConfigurationMacros.js",
-    },
-    {
-        name: "DetectMagicConfigurationMacros",
-        file: "./world-macros/DetectMagicConfigurationMacros.js",
-    },
-    {
-        name: "SavingThrowConfigurationMacros",
-        file: "./world-macros/SavingThrowConfigurationMacros.js",
     },
 ]);
 

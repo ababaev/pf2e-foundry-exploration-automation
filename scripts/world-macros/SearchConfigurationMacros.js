@@ -1,42 +1,7 @@
-await (async () => {
+import { MODULE_ID } from "../module-id.js";
+import { GENERIC_BEHAVIOR_SOURCE as BEHAVIOR_SOURCE } from "../migrate-behaviors.js";
 
-    const MODULE_ID = "pf2e-exploration-automation";
-
-    const BEHAVIOR_SOURCE = `
-    const moduleApi =
-        game.modules
-            .get("pf2e-exploration-automation")
-            ?.api;
-
-    if (
-        !moduleApi ||
-        typeof moduleApi.requestBehaviorExecution !==
-            "function"
-    ) {
-        console.error(
-            "PF2e Exploration Automation | Module API is unavailable.",
-            {
-                behavior,
-                event,
-                region,
-                scene,
-            },
-        );
-    } else {
-        await moduleApi.requestBehaviorExecution({
-            behaviorUuid:
-                behavior?.uuid,
-
-            tokenUuid:
-                event?.data?.token?.document?.uuid ??
-                event?.data?.token?.uuid,
-
-            eventName:
-                event?.name ??
-                "tokenEnter",
-        });
-    }
-    `.trim();
+export async function runSearchConfiguration({ region, existingBehavior } = {}) {
 
     const TARGET_TYPES = Object.freeze({
         npc: {
@@ -126,9 +91,7 @@ await (async () => {
      * edits that Behavior in place instead of creating a new one.
      */
     const raExistingBehavior =
-        typeof existingBehavior !== "undefined" && existingBehavior
-            ? existingBehavior
-            : null;
+        existingBehavior ?? null;
 
     if (!game.user.isGM) {
         ui.notifications.error(
@@ -140,40 +103,15 @@ await (async () => {
         return;
     }
 
-    let raRegion = null;
+    const raRegion =
+        region ?? raExistingBehavior?.parent ?? null;
 
-    if (raExistingBehavior) {
-        raRegion = raExistingBehavior.parent ?? null;
-    } else {
-        if (!canvas?.ready || !canvas.scene) {
-            ui.notifications.error(
-                "Region Automation: there is no active Scene.",
-            );
-
-            return;
-        }
-
-        const selectedRegions = Array.from(
-            canvas.regions?.controlled ?? [],
+    if (!raRegion) {
+        ui.notifications.error(
+            "Region Automation: the Region is unavailable.",
         );
 
-        if (selectedRegions.length !== 1) {
-            ui.notifications.warn(
-                `Region Automation: select exactly one Region. Selected: ${selectedRegions.length}.`,
-            );
-
-            return;
-        }
-
-        raRegion = selectedRegions[0]?.document;
-
-        if (!raRegion) {
-            ui.notifications.error(
-                "Region Automation: the selected Region document is unavailable.",
-            );
-
-            return;
-        }
+        return;
     }
 
     const raExistingConfig =
@@ -625,4 +563,4 @@ await (async () => {
             "Region Automation: the Search automation could not be created. See the console.",
         );
     }
-})();
+}

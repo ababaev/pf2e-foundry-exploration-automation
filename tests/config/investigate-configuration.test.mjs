@@ -2,39 +2,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
-import { runPastedMacro } from "../helpers/run-macro.mjs";
+import { runInvestigateConfiguration } from "../../scripts/world-macros/InvestigateConfigurationMacros.js";
 
-const MACRO_URL = new URL("../../scripts/world-macros/InvestigateConfigurationMacros.js", import.meta.url);
-
-async function runMacro(scope = {}) {
-    await runPastedMacro(MACRO_URL, scope);
-}
-
-function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
+function setupWorld({ isGM = true } = {}) {
     const handles = installBaseGlobals({ isGM });
-    globalThis.canvas.ready = hasScene;
-    globalThis.canvas.scene = hasScene ? { uuid: "Scene.mock" } : null;
-    globalThis.canvas.regions.controlled = regions;
     globalThis.document = { createElement: () => ({ innerHTML: "" }) };
     return handles;
 }
 
 test("Investigate configuration: rejects a non-GM user", async () => {
     const { notifications } = setupWorld({ isGM: false });
-    await runMacro();
+    await runInvestigateConfiguration({ region: makeRegion() });
     assert.match(notifications.error[0], /only a GM can add an Investigation/);
 });
 
-test("Investigate configuration: rejects when there is no active Scene", async () => {
-    const { notifications } = setupWorld({ hasScene: false });
-    await runMacro();
-    assert.match(notifications.error[0], /there is no active Scene/);
-});
-
-test("Investigate configuration: rejects when zero Regions are selected", async () => {
-    const { notifications } = setupWorld({ regions: [] });
-    await runMacro();
-    assert.match(notifications.warn[0], /select exactly one Region/);
+test("Investigate configuration: rejects when no Region is provided", async () => {
+    const { notifications } = setupWorld();
+    await runInvestigateConfiguration({});
+    assert.match(notifications.error[0], /Region is unavailable/);
 });
 
 test("Investigate configuration: editing an existing Behavior pre-fills its current subject/DC/skills and updates in place", async () => {
@@ -45,13 +30,13 @@ test("Investigate configuration: editing an existing Behavior pre-fills its curr
         triggeredTokenUuids: ["Token.already-triggered"],
         parent: region,
     });
-    setupWorld({ regions: [] });
+    setupWorld();
 
     // Only "subject" is supplied; hint/baseDC/skills should fall back to
     // the existing Behavior's current values.
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { subject: "Renamed Runes" } }]).wait;
 
-    await runMacro({ existingBehavior: existing });
+    await runInvestigateConfiguration({ existingBehavior: existing });
 
     assert.equal(region.behaviors.length, 0);
     assert.equal(existing.name, "[RA-investigate] Renamed Runes");
@@ -69,7 +54,7 @@ test("Investigate configuration: editing keeps the Add / Move picker working aga
         config: { subject: "Runes", hint: "", baseDC: 20, skills: { hard: ["arcana"] } },
         parent: region,
     });
-    setupWorld({ regions: [] });
+    setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -86,7 +71,7 @@ test("Investigate configuration: editing keeps the Add / Move picker working aga
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro({ existingBehavior: existing });
+    await runInvestigateConfiguration({ existingBehavior: existing });
 
     const config = existing.flags[MODULE_ID].config;
     assert.deepEqual(config.skills.hard, ["arcana"]);
@@ -98,26 +83,26 @@ test("Investigate configuration: rejects a non-GM user trying to edit", async ()
     const existing = makeBehavior({ functionality: "investigate", config: { subject: "X", baseDC: 20, skills: {} }, parent: region });
     const { notifications } = setupWorld({ isGM: false });
 
-    await runMacro({ existingBehavior: existing });
+    await runInvestigateConfiguration({ existingBehavior: existing });
 
     assert.match(notifications.error[0], /only a GM can edit an Investigation/);
 });
 
 test("Investigate configuration: valid submission keeps the default skill columns (Specified/Unspecified Lore)", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "Strange Runes", hint: "Occult in nature", baseDC: "22" } },
     ]).wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.equal(region.behaviors.length, 1);
     const behavior = region.behaviors[0];
 
     assert.equal(behavior.name, "[RA-investigate] Strange Runes");
-    assert.match(behavior.system.source, /moduleApi\.requestBehaviorExecution/);
+    assert.match(behavior.system.source, /\.requestBehaviorExecution/);
 
     const moduleData = behavior.flags[MODULE_ID];
     assert.equal(moduleData.schemaVersion, 2);
@@ -131,7 +116,7 @@ test("Investigate configuration: valid submission keeps the default skill column
 
 test("Investigate configuration: the Add / Move picker moves a skill into the chosen difficulty column", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -148,7 +133,7 @@ test("Investigate configuration: the Add / Move picker moves a skill into the ch
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     const config = region.behaviors[0].flags[MODULE_ID].config;
     assert.deepEqual(config.skills.hard, ["arcana"]);
@@ -156,7 +141,7 @@ test("Investigate configuration: the Add / Move picker moves a skill into the ch
 
 test("Investigate configuration: Performance, Stealth, Survival, and Thievery are selectable skills", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -182,7 +167,7 @@ test("Investigate configuration: Performance, Stealth, Survival, and Thievery ar
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     const config = region.behaviors[0].flags[MODULE_ID].config;
     assert.deepEqual(config.skills.normal, ["survival"]);
@@ -192,7 +177,7 @@ test("Investigate configuration: Performance, Stealth, Survival, and Thievery ar
 
 test("Investigate configuration: Add / Move only rewrites the difficulty column(s) that actually changed", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
 
     let veryEasyRewriteCount = 0;
 
@@ -233,7 +218,7 @@ test("Investigate configuration: Add / Move only rewrites the difficulty column(
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.equal(veryEasyRewriteCount, 0, "adding a skill to 'normal' must not rewrite the unrelated 'very-easy' column");
     assert.deepEqual(region.behaviors[0].flags[MODULE_ID].config.skills.normal, ["arcana"]);
@@ -241,7 +226,7 @@ test("Investigate configuration: Add / Move only rewrites the difficulty column(
 
 test("Investigate configuration: the Add / Move picker warns and ignores an invalid skill/difficulty pair", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -258,7 +243,7 @@ test("Investigate configuration: the Add / Move picker warns and ignores an inva
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /valid skill and difficulty/.test(m)) ?? "", /choose a valid skill and difficulty/);
     // Defaults are untouched since the add was rejected.
@@ -267,14 +252,14 @@ test("Investigate configuration: the Add / Move picker warns and ignores an inva
 
 test("Investigate configuration: empty subject is rejected and re-prompts", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "  ", hint: "", baseDC: "20" } },
         { fields: { subject: "Retry", hint: "", baseDC: "20" } },
     ]).wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /subject cannot be empty/.test(m)) ?? "", /Investigation subject cannot be empty/);
     assert.equal(region.behaviors.length, 1);
@@ -283,14 +268,14 @@ test("Investigate configuration: empty subject is rejected and re-prompts", asyn
 
 test("Investigate configuration: out-of-range base DC is rejected", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "Runes", hint: "", baseDC: "500" } },
         { fields: { subject: "Runes", hint: "", baseDC: "25" } },
     ]).wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /Base DC must be a whole number/.test(m)) ?? "", /whole number from 0 to 100/);
     assert.equal(region.behaviors[0].flags[MODULE_ID].config.baseDC, 25);
@@ -298,7 +283,7 @@ test("Investigate configuration: out-of-range base DC is rejected", async () => 
 
 test("Investigate configuration: removing every default skill (double-click each chip) is rejected as 'no skills configured'", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -330,7 +315,7 @@ test("Investigate configuration: removing every default skill (double-click each
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /configure at least one skill/.test(m)) ?? "", /configure at least one skill/);
     assert.equal(region.behaviors.length, 1);
@@ -341,15 +326,15 @@ test("Investigate configuration: removing every default skill (double-click each
 
 test("Investigate configuration: canceling creates no Behavior", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ action: "cancel" }]).wait;
-    await runMacro();
+    await runInvestigateConfiguration({ region });
     assert.equal(region.behaviors.length, 0);
 });
 
 test("Investigate configuration: dropping a document onto the hint field inserts an @UUID reference", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
     globalThis.__uuidDocuments["Actor.witness"] = { name: "Local Witness" };
 
     const { wait } = queueDialogResponses([
@@ -369,7 +354,7 @@ test("Investigate configuration: dropping a document onto the hint field inserts
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runInvestigateConfiguration({ region });
 
     assert.equal(region.behaviors[0].flags[MODULE_ID].config.hint, "Ask @UUID[Actor.witness]{Local Witness}");
 });

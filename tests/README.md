@@ -29,15 +29,17 @@ why an explicit path doesn't work here). Uses Node's built-in `node:test`/`node:
   `makeExplorationItem` build minimal fixtures with real (in-memory) `.update()`/`.createEmbeddedDocuments()`
   methods, so registration/rollback/creation logic runs for real rather than being stubbed out.
 - **`run-macro.mjs`** — `runPastedMacro(fileUrl)` runs a `scripts/world-macros/*.js` **paste-only** file
-  (`*ConfigurationMacros.js`, `RegionAutomationMainMacros.js`, ...) the same way Foundry actually runs a world
-  Macro: reads the source text and executes it as an `AsyncFunction` body, rather than `import()`-ing it.
-  These files intentionally have no `import`/`export` (they get pasted into a `Macro` document, which can't
-  use static `import`), so Node can't unambiguously detect them as ESM and top-level `await` fails under
-  Node's CommonJS fallback if you try to `import()` them directly — this sidesteps that, and is more faithful
-  to production besides. Every call re-reads the file and builds a fresh function, so there's no caching to
-  fight and no need for cache-busting query strings. The real `*FunctionMacros.js`/`*RollHelperMacros.js`
-  files (used by `tests/activities/`) **do** have `export`, are real ES modules, and should just be
-  `import`-ed normally.
+  (`RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js`) the same
+  way Foundry actually runs a world Macro: reads the source text and executes it as an `AsyncFunction` body,
+  rather than `import()`-ing it. These files intentionally have no `import`/`export` (they get pasted into a
+  `Macro` document, which can't use static `import`), so Node can't unambiguously detect them as ESM and
+  top-level `await` fails under Node's CommonJS fallback if you try to `import()` them directly — this
+  sidesteps that, and is more faithful to production besides. Every call re-reads the file and builds a fresh
+  function, so there's no caching to fight and no need for cache-busting query strings. Everything else under
+  `scripts/world-macros/` — `*ConfigurationMacros.js`, `*FunctionMacros.js`, `*RollHelperMacros.js`,
+  `ExplorationActivityMacros.js`, `RegistrationMacros.js` — **does** have `export`, is a real ES module, and
+  should just be `import`-ed normally (`tests/config/*` imports `run<Activity>Configuration` directly;
+  `tests/activities/*` does the same for `run<Activity>`/`run<Activity>Roll`).
 - **`fake-dialog.mjs`** — `queueDialogResponses([...])` stands in for `foundry.applications.api.DialogV2.wait`
   so `tests/config/*` can drive a Configuration macro's dialog loop without a real browser DOM. Each queued
   response covers one `DialogV2.wait()` call (the macros loop and re-open the dialog when validation fails,

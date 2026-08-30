@@ -3,20 +3,6 @@ await (async () => {
     const raModuleId =
         "pf2e-exploration-automation";
 
-    const macroNames = {
-        investigate:
-            "InvestigateConfigurationMacros",
-
-        "detect-magic":
-            "DetectMagicConfigurationMacros",
-
-        search:
-            "SearchConfigurationMacros",
-
-        "saving-throw":
-            "SavingThrowConfigurationMacros",
-    };
-
     const functionalityLabels = {
         investigate:
             "Investigation",
@@ -31,29 +17,6 @@ await (async () => {
             "Saving Throw",
     };
 
-    const findSingleMacro = name => {
-        const matches =
-            game.macros.filter(
-                macro =>
-                    macro.name === name,
-            );
-
-        if (matches.length !== 1) {
-            console.error(
-                `Region Automation | Expected exactly one "${name}" macro`,
-                matches,
-            );
-
-            ui.notifications.error(
-                `Region Automation: expected exactly one "${name}" macro, but found ${matches.length}.`,
-            );
-
-            return null;
-        }
-
-        return matches[0];
-    };
-
     const escapeHTML = value =>
         String(value ?? "").replace(
             /[&<>"']/g,
@@ -66,6 +29,37 @@ await (async () => {
                     "'": "&#039;",
                 })[character],
         );
+
+    /*
+     * Resolved lazily, right before it's actually needed, so a GM
+     * choosing "Edit Existing" on a Region with no automations (which
+     * never reaches a dispatch call) doesn't require the module API
+     * to be available.
+     */
+    const resolveApi = () => {
+        const raApi =
+            game.modules
+                .get(raModuleId)
+                ?.api;
+
+        if (
+            !raApi ||
+            typeof raApi.openConfigurationDialog !==
+                "function"
+        ) {
+            ui.notifications.error(
+                "Region Automation: the module API is unavailable. See the console.",
+            );
+
+            console.error(
+                "PF2e Exploration Automation | Module API is unavailable.",
+            );
+
+            return null;
+        }
+
+        return raApi;
+    };
 
     if (!game.user.isGM) {
         ui.notifications.error(
@@ -421,27 +415,20 @@ await (async () => {
             raChosenBehavior.flags[raModuleId]
                 .functionality;
 
-        const editMacroName =
-            macroNames[raChosenFunctionality];
+        const raApi =
+            resolveApi();
 
-        if (!editMacroName) {
-            ui.notifications.error(
-                "Region Automation: this automation's type is unavailable for editing.",
-            );
-
+        if (!raApi) {
             return;
         }
 
-        const editMacro =
-            findSingleMacro(
-                editMacroName,
-            );
+        await raApi.openConfigurationDialog({
+            activity:
+                raChosenFunctionality,
 
-        if (!editMacro) {
-            return;
-        }
+            region:
+                raRegion,
 
-        await editMacro.execute({
             existingBehavior:
                 raChosenBehavior,
         });
@@ -449,25 +436,18 @@ await (async () => {
         return;
     }
 
-    const macroName =
-        macroNames[result.action];
+    const raApi =
+        resolveApi();
 
-    if (!macroName) {
-        ui.notifications.error(
-            "Region Automation: the selected automation type is unavailable.",
-        );
-
+    if (!raApi) {
         return;
     }
 
-    const macro =
-        findSingleMacro(
-            macroName,
-        );
+    await raApi.openConfigurationDialog({
+        activity:
+            result.action,
 
-    if (!macro) {
-        return;
-    }
-
-    await macro.execute();
+        region:
+            raRegion,
+    });
 })();

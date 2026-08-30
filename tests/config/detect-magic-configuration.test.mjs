@@ -2,39 +2,24 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
-import { runPastedMacro } from "../helpers/run-macro.mjs";
+import { runDetectMagicConfiguration } from "../../scripts/world-macros/DetectMagicConfigurationMacros.js";
 
-const MACRO_URL = new URL("../../scripts/world-macros/DetectMagicConfigurationMacros.js", import.meta.url);
-
-async function runMacro(scope = {}) {
-    await runPastedMacro(MACRO_URL, scope);
-}
-
-function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
+function setupWorld({ isGM = true } = {}) {
     const handles = installBaseGlobals({ isGM });
-    globalThis.canvas.ready = hasScene;
-    globalThis.canvas.scene = hasScene ? { uuid: "Scene.mock" } : null;
-    globalThis.canvas.regions.controlled = regions;
     globalThis.document = { createElement: () => ({ innerHTML: "" }) };
     return handles;
 }
 
 test("Detect Magic configuration: rejects a non-GM user", async () => {
     const { notifications } = setupWorld({ isGM: false });
-    await runMacro();
+    await runDetectMagicConfiguration({ region: makeRegion() });
     assert.match(notifications.error[0], /only a GM can add a Detect Magic automation/);
 });
 
-test("Detect Magic configuration: rejects when there is no active Scene", async () => {
-    const { notifications } = setupWorld({ hasScene: false });
-    await runMacro();
-    assert.match(notifications.error[0], /there is no active Scene/);
-});
-
-test("Detect Magic configuration: rejects when zero Regions are selected", async () => {
-    const { notifications } = setupWorld({ regions: [] });
-    await runMacro();
-    assert.match(notifications.warn[0], /select exactly one Region/);
+test("Detect Magic configuration: rejects when no Region is provided", async () => {
+    const { notifications } = setupWorld();
+    await runDetectMagicConfiguration({});
+    assert.match(notifications.error[0], /Region is unavailable/);
 });
 
 test("Detect Magic configuration: editing an existing Behavior pre-fills its current subject/detection/DC/skills and updates in place", async () => {
@@ -45,11 +30,11 @@ test("Detect Magic configuration: editing an existing Behavior pre-fills its cur
         triggeredTokenUuids: ["Token.already-triggered"],
         parent: region,
     });
-    setupWorld({ regions: [] });
+    setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ fields: { subject: "Renamed Aura" } }]).wait;
 
-    await runMacro({ existingBehavior: existing });
+    await runDetectMagicConfiguration({ existingBehavior: existing });
 
     assert.equal(region.behaviors.length, 0);
     assert.equal(existing.name, "[RA-detect-magic] Renamed Aura");
@@ -69,14 +54,14 @@ test("Detect Magic configuration: rejects a non-GM user trying to edit", async (
     });
     const { notifications } = setupWorld({ isGM: false });
 
-    await runMacro({ existingBehavior: existing });
+    await runDetectMagicConfiguration({ existingBehavior: existing });
 
     assert.match(notifications.error[0], /only a GM can edit a Detect Magic automation/);
 });
 
 test("Detect Magic configuration: valid submission keeps the default skill column (arcana/nature/occultism/religion under normal)", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         {
@@ -89,13 +74,13 @@ test("Detect Magic configuration: valid submission keeps the default skill colum
         },
     ]).wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.equal(region.behaviors.length, 1);
     const behavior = region.behaviors[0];
 
     assert.equal(behavior.name, "[RA-detect-magic] Aura");
-    assert.match(behavior.system.source, /moduleApi\.requestBehaviorExecution/);
+    assert.match(behavior.system.source, /\.requestBehaviorExecution/);
 
     const moduleData = behavior.flags[MODULE_ID];
     assert.equal(moduleData.schemaVersion, 2);
@@ -109,7 +94,7 @@ test("Detect Magic configuration: valid submission keeps the default skill colum
 
 test("Detect Magic configuration: the Add / Move picker moves a skill into the chosen difficulty column", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -126,7 +111,7 @@ test("Detect Magic configuration: the Add / Move picker moves a skill into the c
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     const config = region.behaviors[0].flags[MODULE_ID].config;
     // "religion" moves out of its default "normal" column into "easy".
@@ -136,7 +121,7 @@ test("Detect Magic configuration: the Add / Move picker moves a skill into the c
 
 test("Detect Magic configuration: the Add / Move picker warns and ignores an invalid skill/difficulty pair", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -153,7 +138,7 @@ test("Detect Magic configuration: the Add / Move picker warns and ignores an inv
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /valid skill and difficulty/.test(m)) ?? "", /choose a valid skill and difficulty/);
     // Untouched: religion is still in its default "normal" column.
@@ -162,14 +147,14 @@ test("Detect Magic configuration: the Add / Move picker warns and ignores an inv
 
 test("Detect Magic configuration: empty subject is rejected and re-prompts", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "", detection: "Something", hint: "", baseDC: "20" } },
         { fields: { subject: "Retry", detection: "Something", hint: "", baseDC: "20" } },
     ]).wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /subject cannot be empty/.test(m)) ?? "", /Detect Magic subject cannot be empty/);
     assert.equal(region.behaviors.length, 1);
@@ -178,14 +163,14 @@ test("Detect Magic configuration: empty subject is rejected and re-prompts", asy
 
 test("Detect Magic configuration: empty detection description is rejected", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "Aura", detection: "  ", hint: "", baseDC: "20" } },
         { fields: { subject: "Aura", detection: "It glows", hint: "", baseDC: "20" } },
     ]).wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.match(
         notifications.warn.find(m => /detection description cannot be empty/.test(m)) ?? "",
@@ -196,14 +181,14 @@ test("Detect Magic configuration: empty detection description is rejected", asyn
 
 test("Detect Magic configuration: out-of-range base DC is rejected", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([
         { fields: { subject: "Aura", detection: "It glows", hint: "", baseDC: "-1" } },
         { fields: { subject: "Aura", detection: "It glows", hint: "", baseDC: "20" } },
     ]).wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.match(notifications.warn.find(m => /Base DC must be a whole number/.test(m)) ?? "", /whole number from 0 to 100/);
     assert.equal(region.behaviors[0].flags[MODULE_ID].config.baseDC, 20);
@@ -211,7 +196,7 @@ test("Detect Magic configuration: out-of-range base DC is rejected", async () =>
 
 test("Detect Magic configuration: removing every default skill is rejected as 'no identification skill configured'", async () => {
     const region = makeRegion();
-    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    const { notifications } = setupWorld();
 
     const { wait } = queueDialogResponses([
         {
@@ -239,7 +224,7 @@ test("Detect Magic configuration: removing every default skill is rejected as 'n
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.match(
         notifications.warn.find(m => /configure at least one identification skill/.test(m)) ?? "",
@@ -251,15 +236,15 @@ test("Detect Magic configuration: removing every default skill is rejected as 'n
 
 test("Detect Magic configuration: canceling creates no Behavior", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
     globalThis.foundry.applications.api.DialogV2.wait = queueDialogResponses([{ action: "cancel" }]).wait;
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
     assert.equal(region.behaviors.length, 0);
 });
 
 test("Detect Magic configuration: dropping a document onto the detection field inserts an @UUID reference", async () => {
     const region = makeRegion();
-    setupWorld({ regions: [{ document: region }] });
+    setupWorld();
     globalThis.__uuidDocuments["Item.relic"] = { name: "Cursed Relic" };
 
     const { wait } = queueDialogResponses([
@@ -276,7 +261,7 @@ test("Detect Magic configuration: dropping a document onto the detection field i
     ]);
     globalThis.foundry.applications.api.DialogV2.wait = wait;
 
-    await runMacro();
+    await runDetectMagicConfiguration({ region });
 
     assert.equal(region.behaviors[0].flags[MODULE_ID].config.detection, "@UUID[Item.relic]{Cursed Relic}");
 });

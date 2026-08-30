@@ -8,6 +8,7 @@ import { getPrimaryGM, isPrimaryGM, registerSocket, requestBehaviorExecution } f
 import { GENERIC_BEHAVIOR_SOURCE, migrateWorldBehaviors, normalizeBehaviorSource } from "./migrate-behaviors.js";
 import { syncWorldMacros } from "./macro-sync.js";
 import { triggerRegionAutomationForTokens } from "./manual-trigger.js";
+import { openConfigurationDialog } from "./configuration-dialogs.js";
 import { JOURNAL_NAME as GM_LOG_JOURNAL_NAME, logToGMJournal } from "./world-macros/shared/gm-log.js";
 
 const AUTO_MIGRATE_BEHAVIORS = true;
@@ -36,6 +37,7 @@ function exposeApi() {
         normalizeBehaviorSource,
         syncWorldMacros,
         triggerRegionAutomationForTokens,
+        openConfigurationDialog,
         logToGMJournal,
         gmLogJournalName: GM_LOG_JOURNAL_NAME,
         genericBehaviorSource: GENERIC_BEHAVIOR_SOURCE,

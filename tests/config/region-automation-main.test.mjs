@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
+import { runSearchConfiguration } from "../../scripts/world-macros/SearchConfigurationMacros.js";
 
 const MACRO_URL = new URL("../../scripts/world-macros/RegionAutomationMainMacros.js", import.meta.url);
-const SEARCH_CONFIG_URL = new URL("../../scripts/world-macros/SearchConfigurationMacros.js", import.meta.url);
 
 async function runMacro() {
     await runPastedMacro(MACRO_URL);
@@ -19,19 +19,20 @@ function setupWorld({ isGM = true, hasScene = true, regions = [] } = {}) {
     return handles;
 }
 
-/** A spy stand-in for one of the *ConfigurationMacros.js world Macros. */
-function makeSpyMacro(name) {
+/** A spy stand-in for the module API's openConfigurationDialog. */
+function installApiSpy(impl) {
     const calls = [];
-    return {
-        macro: { name, type: "script", execute: async scope => { calls.push(scope); } },
-        calls,
-    };
-}
 
-function installMacros(macros) {
-    globalThis.game.macros = {
-        filter: predicate => macros.filter(predicate),
-    };
+    globalThis.game.modules.set(MODULE_ID, {
+        api: {
+            openConfigurationDialog: async args => {
+                calls.push(args);
+                if (impl) await impl(args);
+            },
+        },
+    });
+
+    return calls;
 }
 
 test("RegionAutomationMainMacros: rejects a non-GM user", async () => {
@@ -40,18 +41,38 @@ test("RegionAutomationMainMacros: rejects a non-GM user", async () => {
     assert.match(notifications.error[0], /only a GM can add automations/);
 });
 
+test("RegionAutomationMainMacros: rejects when there is no active Scene", async () => {
+    const { notifications } = setupWorld({ hasScene: false });
+    await runMacro();
+    assert.match(notifications.error[0], /there is no active Scene/);
+});
+
 test("RegionAutomationMainMacros: rejects when zero or multiple Regions are selected", async () => {
     const { notifications } = setupWorld({ regions: [] });
     await runMacro();
     assert.match(notifications.warn[0], /select exactly one Region/);
 });
 
-test("RegionAutomationMainMacros: 'Add Automation' still dispatches to the chosen activity's Configuration macro with no scope", async () => {
+test("RegionAutomationMainMacros: rejects when the module API is unavailable", async () => {
+    const region = makeRegion();
+    const { notifications } = setupWorld({ regions: [{ document: region }] });
+    // No entry in game.modules for this module id.
+
+    globalThis.foundry.applications.api.DialogV2.wait = async config => {
+        const button = config.buttons.find(b => b.action === "search");
+        return button.callback();
+    };
+
+    await runMacro();
+
+    assert.match(notifications.error[0], /module API is unavailable/);
+});
+
+test("RegionAutomationMainMacros: 'Add Automation' dispatches to the chosen activity via the module API", async () => {
     const region = makeRegion();
     setupWorld({ regions: [{ document: region }] });
 
-    const search = makeSpyMacro("SearchConfigurationMacros");
-    installMacros([search.macro]);
+    const calls = installApiSpy();
 
     // The picker dialog's buttons map action -> callback, so simulate
     // picking "search" by driving the mock through its button lookup
@@ -63,8 +84,10 @@ test("RegionAutomationMainMacros: 'Add Automation' still dispatches to the chose
 
     await runMacro();
 
-    assert.equal(search.calls.length, 1);
-    assert.equal(search.calls[0], undefined);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].activity, "search");
+    assert.equal(calls[0].region, region);
+    assert.equal(calls[0].existingBehavior, undefined);
 });
 
 test("RegionAutomationMainMacros: 'Edit Existing' with no automations on the Region reports there's nothing to edit", async () => {
@@ -81,7 +104,7 @@ test("RegionAutomationMainMacros: 'Edit Existing' with no automations on the Reg
     assert.match(notifications.info[0], /has no automations to edit/);
 });
 
-test("RegionAutomationMainMacros: 'Edit Existing' lists every automation and dispatches to the right Configuration macro with existingBehavior", async () => {
+test("RegionAutomationMainMacros: 'Edit Existing' lists every automation and dispatches to the right one via the module API", async () => {
     const region = makeRegion();
     const searchBehavior = makeBehavior({ functionality: "search", config: { subject: "Cache" }, parent: region });
     const savingThrowBehavior = makeBehavior({ functionality: "saving-throw", config: { subject: "Trap" }, parent: region });
@@ -89,9 +112,7 @@ test("RegionAutomationMainMacros: 'Edit Existing' lists every automation and dis
 
     setupWorld({ regions: [{ document: region }] });
 
-    const search = makeSpyMacro("SearchConfigurationMacros");
-    const savingThrow = makeSpyMacro("SavingThrowConfigurationMacros");
-    installMacros([search.macro, savingThrow.macro]);
+    const calls = installApiSpy();
 
     let callIndex = 0;
     globalThis.foundry.applications.api.DialogV2.wait = async config => {
@@ -111,9 +132,10 @@ test("RegionAutomationMainMacros: 'Edit Existing' lists every automation and dis
 
     await runMacro();
 
-    assert.equal(search.calls.length, 0);
-    assert.equal(savingThrow.calls.length, 1);
-    assert.equal(savingThrow.calls[0].existingBehavior, savingThrowBehavior);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].activity, "saving-throw");
+    assert.equal(calls[0].region, region);
+    assert.equal(calls[0].existingBehavior, savingThrowBehavior);
 });
 
 test("RegionAutomationMainMacros: canceling the behavior picker dispatches nothing", async () => {
@@ -121,8 +143,7 @@ test("RegionAutomationMainMacros: canceling the behavior picker dispatches nothi
     region.behaviors.push(makeBehavior({ functionality: "search", config: {}, parent: region }));
     setupWorld({ regions: [{ document: region }] });
 
-    const search = makeSpyMacro("SearchConfigurationMacros");
-    installMacros([search.macro]);
+    const calls = installApiSpy();
 
     let callIndex = 0;
     globalThis.foundry.applications.api.DialogV2.wait = async config => {
@@ -137,10 +158,10 @@ test("RegionAutomationMainMacros: canceling the behavior picker dispatches nothi
 
     await runMacro();
 
-    assert.equal(search.calls.length, 0);
+    assert.equal(calls.length, 0);
 });
 
-test("RegionAutomationMainMacros end-to-end: editing dispatches into the real SearchConfigurationMacros.js, which updates the Behavior in place", async () => {
+test("RegionAutomationMainMacros end-to-end: editing dispatches into the real runSearchConfiguration, which updates the Behavior in place", async () => {
     const region = makeRegion();
     const existing = makeBehavior({
         functionality: "search",
@@ -152,7 +173,13 @@ test("RegionAutomationMainMacros end-to-end: editing dispatches into the real Se
 
     setupWorld({ regions: [{ document: region }] });
 
-    // The real Configuration macro this dispatches to opens its own
+    globalThis.game.modules.set(MODULE_ID, {
+        api: {
+            openConfigurationDialog: args => runSearchConfiguration(args),
+        },
+    });
+
+    // The real Configuration function this dispatches to opens its own
     // DialogV2 too, so the mock has to route by dialog title/content
     // rather than a fixed call index.
     globalThis.foundry.applications.api.DialogV2.wait = async config => {
@@ -170,14 +197,6 @@ test("RegionAutomationMainMacros end-to-end: editing dispatches into the real Se
         const button = config.buttons.find(b => b.action !== "cancel");
         return button.callback({}, { form: { elements: { namedItem: name => (name === "dc" ? { value: "30" } : null) } } });
     };
-
-    installMacros([
-        {
-            name: "SearchConfigurationMacros",
-            type: "script",
-            execute: scope => runPastedMacro(SEARCH_CONFIG_URL, scope),
-        },
-    ]);
 
     await runMacro();
 
