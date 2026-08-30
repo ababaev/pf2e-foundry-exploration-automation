@@ -26,7 +26,7 @@ const DEFAULT_ICON = "icons/svg/dice-target.svg";
  * Every world Macro this module provisions, and the world-macros/
  * source file it's kept in sync with.
  *
- * Only the 3 GM-clicked entry points remain here. ExplorationActivityMacros.js,
+ * Only the 4 GM-clicked entry points remain here. ExplorationActivityMacros.js,
  * RegistrationMacros.js, and the 4 *ConfigurationMacros.js files are all
  * deliberately absent — every one of them is now an `export async
  * function ...` real ES module, imported directly (checkExplorationActivity/
@@ -53,6 +53,11 @@ const MANAGED_MACROS = Object.freeze([
         name: "TriggerRegionForPartyMacros",
         file: "./world-macros/TriggerRegionForPartyMacros.js",
         img: `modules/${MODULE_ID}/assets/icons/region-manual-automation-run.png`,
+    },
+    {
+        name: "FoundryCompatCheckMacros",
+        file: "./world-macros/FoundryCompatCheckMacros.js",
+        img: `modules/${MODULE_ID}/assets/icons/RA-module-compatibility.jpg`,
     },
 ]);
 

@@ -7,6 +7,7 @@ const MANAGED_NAMES = [
     "RegionAutomationMainMacros",
     "UnregisterRegionMacros",
     "TriggerRegionForPartyMacros",
+    "FoundryCompatCheckMacros",
 ];
 
 function installMacroWorld() {

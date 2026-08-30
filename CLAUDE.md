@@ -32,22 +32,26 @@ bundler/transpiler unless explicitly asked.
   actually runs those under Node. For anything not covered by the suite, verify with a throwaway
   mocked-Foundry script (mock `game`/`ui`/`ChatMessage`/`Roll`/`ui.notifications`, import or run the real
   file under test, assert on its output) before calling a change done.
+- None of the above can tell you whether a real Foundry/`pf2e` install still matches what's mocked. Run
+  `await game.modules.get("pf2e-exploration-automation").api.runFoundryCompatCheck()` inside a real Foundry
+  world for that — see "Foundry/pf2e compatibility check" below.
 
 ## Architecture
 
 ### Two code populations
 
 - `scripts/main.js`, `scripts/socket.js`, `scripts/executor.js`, `scripts/migrate-behaviors.js`,
-  `scripts/macro-sync.js`, `scripts/configuration-dialogs.js`, `scripts/module-id.js`,
-  `scripts/manual-trigger.js` — the actual module code, loaded via `module.json`. Normal camelCase, standard
-  JS module conventions, free to `import` from anywhere else in this population.
+  `scripts/macro-sync.js`, `scripts/configuration-dialogs.js`, `scripts/foundry-compat-check.js`,
+  `scripts/module-id.js`, `scripts/manual-trigger.js` — the actual module code, loaded via `module.json`.
+  Normal camelCase, standard JS module conventions, free to `import` from anywhere else in this population.
 - `scripts/world-macros/*.js` — source-of-truth copies of Foundry **world Macros**: scripts that get loaded
-  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Only 3 of them —
-  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js` — still need
-  to exist as `Macro` documents at all, and purely because a GM clicks them directly from the hotbar/macro
-  directory; nothing in the codebase looks any of the three up by name. A GM does **not** paste these in by
-  hand: `scripts/macro-sync.js` creates/updates them automatically as the primary GM reaches `ready`, fetching
-  each one's live source straight from these same files (see "World Macro provisioning" below).
+  into Foundry as standalone `Macro` documents, which therefore cannot use static `import`. Only 4 of them —
+  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js`,
+  `FoundryCompatCheckMacros.js` — still need to exist as `Macro` documents at all, and purely because a GM
+  clicks them directly from the hotbar/macro directory; nothing in the codebase looks any of the four up by
+  name. A GM does **not** paste these in by hand: `scripts/macro-sync.js` creates/updates them automatically
+  as the primary GM reaches `ready`, fetching each one's live source straight from these same files (see
+  "World Macro provisioning" below).
   `ExplorationActivityMacros.js`, `RegistrationMacros.js`, and the 4 `*ConfigurationMacros.js` files are all
   deliberately excluded from `macro-sync.js`'s list — every one of them is a real ES module now
   (`export async function ...`), imported directly rather than looked up by
@@ -57,8 +61,9 @@ bundler/transpiler unless explicitly asked.
   top-level `export` is invalid inside a Macro's command body, so Foundry would reject any of them if
   `macro-sync.js` tried to create/update them as Documents.
 
-  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, and `TriggerRegionForPartyMacros.js` use an
-  `ra`-prefixed variable naming convention (`raBehavior`, `raToken`, `raResult`, ...) and
+  `RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js`, and
+  `FoundryCompatCheckMacros.js` use an `ra`-prefixed variable naming convention (`raBehavior`, `raToken`,
+  `raResult`, ...) and
   `typeof x !== "undefined"` guards instead of relying on parameter defaults, because inside a `Macro`'s
   script body those names are Foundry-injected scope variables that may not exist at all — referencing an
   undeclared variable directly would throw. Preserve this whenever touching these files.
@@ -137,9 +142,10 @@ route prefix), then creates a `Macro` document with that name/command if none ex
 one in place if its stored `command` has drifted from the source — so a `git pull` + world reload is the
 entire update story, never a manual re-paste. Managed macros are filed under a `"PF2e Exploration
 Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
-client ran the sync) can see and run them. All 3 entries — `RegionAutomationMainMacros`,
-`UnregisterRegionMacros`, `TriggerRegionForPartyMacros` — get a custom `img` under `assets/icons/`; a future
-entry with no custom `img` falls back to a default core Foundry icon. Every created macro carries
+client ran the sync) can see and run them. All 4 entries — `RegionAutomationMainMacros`,
+`UnregisterRegionMacros`, `TriggerRegionForPartyMacros`, `FoundryCompatCheckMacros` — get a custom `img` under
+`assets/icons/`; a future entry with no custom `img` falls back to a default core Foundry icon. Every created
+macro carries
 `flags[MODULE_ID].managed = true`. On every run, `syncWorldMacros()` also deletes any `type: "script"` macro
 carrying that flag whose name is no longer in `MANAGED_MACROS` (`pruneOrphanedMacros`) — this is what keeps a
 macro from a since-removed table entry (e.g. `SavingThrowFunctionMacros`/`SavingThrowRollHelperMacros`/
@@ -149,6 +155,31 @@ carrying the flag, so anything a GM created or renamed into the folder by hand i
 **not** run when the module itself is disabled — Foundry gives modules no hook for that, so the Macro folder
 and any macros in it are untouched until the module is enabled again and a sync actually runs. Exposed on the
 module API as `syncWorldMacros` for manual re-runs.
+
+### Foundry/pf2e compatibility check
+
+`tests/` (see `tests/README.md`) verifies this module's logic against `tests/helpers/mock-foundry.mjs`'s
+hand-rolled Foundry/`pf2e` globals — it can never notice that a mock has drifted from what a real install
+actually does. `scripts/foundry-compat-check.js`'s `runFoundryCompatCheck()` is the other half: it runs
+**inside a real Foundry client**, not under `node --test`, exercising every Foundry/`pf2e` surface this module
+touches (grouped into core-Foundry/Document-CRUD/`pf2e`-system tiers) and reporting what's changed. Deliberately
+**not** run automatically (`ready`-hook or otherwise) — its Document-CRUD tier does real create/update/delete
+round-trips, each broadcasting to every connected client, so it stays opt-in and GM-triggered only. Run it
+whenever `module.json`'s `compatibility.verified` is bumped to a new Foundry version, or after a notable `pf2e`
+system update, either by clicking the provisioned `FoundryCompatCheckMacros` macro, or from the browser
+console:
+
+```js
+await game.modules.get("pf2e-exploration-automation").api.runFoundryCompatCheck();
+```
+
+Mutating checks (Macro/Folder/ChatMessage/JournalEntry/Scene/Region/RegionBehavior CRUD) create their own
+`"[RA-compat-check]"`-named throwaway documents and delete them in a `finally`, so it's safe to run against a
+real world. `pf2e`-system checks are deliberately read-only (existence/`typeof` only) — they never call
+`.roll(...)`/`.use(...)`/`.withRollOptions(...)`, since those perform real game actions against a live actor;
+see the file's header comment for what a green result does and doesn't guarantee. Each check's comment names
+the `tests/helpers/mock-foundry.mjs` mock it corresponds to, so a failure points straight at what to update on
+the Node-test side too.
 
 ### Functionality dispatch and porting an activity
 

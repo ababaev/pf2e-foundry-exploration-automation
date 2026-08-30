@@ -232,6 +232,17 @@ if (
     );
 }
 
+if (
+    typeof packageModule
+        .api
+        ?.runFoundryCompatCheck !==
+    "function"
+) {
+    throw new Error(
+        "runFoundryCompatCheck was not exposed on the module API during init.",
+    );
+}
+
 /*
  * Simulate a macro left over from a MANAGED_MACROS entry that was later
  * removed (e.g. SavingThrowFunctionMacros, once it became ES-only).

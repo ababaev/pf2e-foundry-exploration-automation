@@ -29,7 +29,8 @@ why an explicit path doesn't work here). Uses Node's built-in `node:test`/`node:
   `makeExplorationItem` build minimal fixtures with real (in-memory) `.update()`/`.createEmbeddedDocuments()`
   methods, so registration/rollback/creation logic runs for real rather than being stubbed out.
 - **`run-macro.mjs`** — `runPastedMacro(fileUrl)` runs a `scripts/world-macros/*.js` **paste-only** file
-  (`RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js`) the same
+  (`RegionAutomationMainMacros.js`, `UnregisterRegionMacros.js`, `TriggerRegionForPartyMacros.js`,
+  `FoundryCompatCheckMacros.js`) the same
   way Foundry actually runs a world Macro: reads the source text and executes it as an `AsyncFunction` body,
   rather than `import()`-ing it. These files intentionally have no `import`/`export` (they get pasted into a
   `Macro` document, which can't use static `import`), so Node can't unambiguously detect them as ESM and
@@ -65,3 +66,11 @@ why an explicit path doesn't work here). Uses Node's built-in `node:test`/`node:
   *same* file share `globalThis` — always call `installBaseGlobals()` (or reinstall whatever globals you
   need) at the top of each `test()`, don't rely on state a previous test in the file happened to leave
   behind.
+
+## What this suite can't catch
+
+Every test here runs against `mock-foundry.mjs`'s hand-rolled Foundry globals, which verifies this module's
+*logic* but can never notice that a mock has silently drifted from what a real Foundry/`pf2e` install actually
+does. `scripts/foundry-compat-check.js` is the other half — a script meant to be run once inside a real
+Foundry world (not by `node --test`) whenever `module.json`'s `compatibility.verified` is bumped, or after a
+notable `pf2e` update. See that file's header comment for how to run it and what it checks.

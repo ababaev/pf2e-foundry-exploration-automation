@@ -9,6 +9,7 @@ import { GENERIC_BEHAVIOR_SOURCE, migrateWorldBehaviors, normalizeBehaviorSource
 import { syncWorldMacros } from "./macro-sync.js";
 import { triggerRegionAutomationForTokens } from "./manual-trigger.js";
 import { openConfigurationDialog } from "./configuration-dialogs.js";
+import { runFoundryCompatCheck } from "./foundry-compat-check.js";
 import { JOURNAL_NAME as GM_LOG_JOURNAL_NAME, logToGMJournal } from "./world-macros/shared/gm-log.js";
 
 const AUTO_MIGRATE_BEHAVIORS = true;
@@ -38,6 +39,7 @@ function exposeApi() {
         syncWorldMacros,
         triggerRegionAutomationForTokens,
         openConfigurationDialog,
+        runFoundryCompatCheck,
         logToGMJournal,
         gmLogJournalName: GM_LOG_JOURNAL_NAME,
         genericBehaviorSource: GENERIC_BEHAVIOR_SOURCE,
