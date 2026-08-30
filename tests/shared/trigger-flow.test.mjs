@@ -101,6 +101,55 @@ test("runTriggeredCheck: requireExplorationActivity:false skips the gate entirel
     assert.equal(rollCalled, true);
 });
 
+test("runTriggeredCheck: explorationActivity lets the exploration-activity gate diverge from the functionality flag (npc-roster semantics)", async () => {
+    installBaseGlobals();
+    // Performing "search", not an exploration activity literally called
+    // "npc-roster" (which doesn't exist).
+    const actor = searchingActor();
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "npc-roster", config: { npcs: [] } });
+
+    let rollCalled = false;
+    const result = await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            activity: "npc-roster",
+            explorationActivity: "search",
+            runRoll: async () => { rollCalled = true; return { ok: true }; },
+        }),
+    );
+
+    assert.equal(result.ok, true);
+    assert.equal(result.rolled, true);
+    assert.equal(rollCalled, true);
+});
+
+test("runTriggeredCheck: explorationActivity defaults to activity, so an npc-roster Behavior still gates on an actor literally performing 'npc-roster' if explorationActivity is omitted", async () => {
+    installBaseGlobals();
+    // Performing "search" only -- with no explorationActivity override,
+    // the gate falls back to checking "npc-roster" itself, which this
+    // actor is not performing.
+    const actor = searchingActor();
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "npc-roster", config: { npcs: [] } });
+
+    let rollCalled = false;
+    const result = await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            activity: "npc-roster",
+            runRoll: async () => { rollCalled = true; return { ok: true }; },
+        }),
+    );
+
+    assert.equal(result.reason, "not-performing-activity");
+    assert.equal(rollCalled, false);
+});
+
 test("runTriggeredCheck: registers the token exactly once and runs the roll", async () => {
     installBaseGlobals();
     const actor = searchingActor();

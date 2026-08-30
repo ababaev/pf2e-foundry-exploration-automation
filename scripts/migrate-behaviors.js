@@ -23,7 +23,7 @@
 
 import { MODULE_ID } from "./module-id.js";
 
-const SUPPORTED_FUNCTIONALITIES = new Set(["investigate", "search", "detect-magic", "saving-throw"]);
+const SUPPORTED_FUNCTIONALITIES = new Set(["investigate", "search", "detect-magic", "saving-throw", "npc-roster"]);
 
 /**
  * This is the script stored inside every Region Automation Execute

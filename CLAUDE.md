@@ -188,12 +188,16 @@ the Node-test side too.
 ### Functionality dispatch and porting an activity
 
 `RegionBehavior.flags["pf2e-exploration-automation"].functionality` is one of `investigate`, `search`,
-`detect-magic`, `saving-throw` (`FUNCTION_MACRO_NAMES` / `SUPPORTED_FUNCTIONALITIES`). All four have been
-ported into the module proper (`MODULE_FUNCTIONS` in `executor.js`, backed by
+`detect-magic`, `saving-throw`, `npc-roster` (`FUNCTION_MACRO_NAMES` / `SUPPORTED_FUNCTIONALITIES`). All five
+are ported into the module proper (`MODULE_FUNCTIONS` in `executor.js`, backed by
 `world-macros/InvestigateFunctionMacros.js` / `SearchFunctionMacros.js` / `DetectMagicFunctionMacros.js` /
-`SavingThrowFunctionMacros.js`). `FUNCTION_MACRO_NAMES` and `executor.js`'s `game.macros.getName(...)`
-fallback path are kept only for a future not-yet-ported activity (e.g. Avoid Notice) — currently every
-functionality resolves through `MODULE_FUNCTIONS` and the fallback is dead code.
+`SavingThrowFunctionMacros.js` / `NpcRosterFunctionMacros.js`). `FUNCTION_MACRO_NAMES` and `executor.js`'s
+`game.macros.getName(...)` fallback path are kept only for a future not-yet-ported activity (e.g. Avoid
+Notice) — currently every functionality resolves through `MODULE_FUNCTIONS` and the fallback is dead code.
+`npc-roster` isn't part of the "per-activity macro triad" below — it has no Configuration dialog (see "NPC
+roster" further down) and its exploration-activity gate deliberately diverges from its functionality flag
+(gates on PF2e's real `"search"` activity, not an activity called "npc-roster") via `runTriggeredCheck`'s
+`explorationActivity` parameter.
 
 To port a future activity, follow `SearchFunctionMacros.js` as the template — it's the thinnest:
 
@@ -254,10 +258,12 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   thrown, so a broken Journal can't take down the chat message a GM actually needs.
 - `shared/trigger-flow.js` — `runTriggeredCheck(...)`, the gate → register → roll → rollback → GM-log
   orchestration described above, parameterized by
-  `label`/`activity`/`requireExplorationActivity`/`skipRegistration`/`validateConfig`/`runRoll`
+  `label`/`activity`/`explorationActivity`/`requireExplorationActivity`/`skipRegistration`/`validateConfig`/`runRoll`
   (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw;
   `skipRegistration: true` skips the one-shot registration and its rollback — see "On-demand triggering"
-  above). It imports `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through
+  above; `explorationActivity` defaults to `activity` and only needs to be passed when they diverge — see
+  `npc-roster`, which gates on PF2e's real `"search"` exploration activity while its own functionality flag
+  is `"npc-roster"`). It imports `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through
   the same `resultBox` contract those two paste-style files still expose internally. On a successful roll
   (`rollResult.message` present), it also calls `logToGMJournal` — this fires for every trigger path (real
   Region entry, the on-demand "run for the party" macro, skipRegistration or not) since they all funnel
@@ -328,26 +334,36 @@ near the top (guard clauses + `editorState` seeding) and one near the bottom (cr
 in between operates purely on `editorState`/`submittedConfiguration` and doesn't know or care which mode
 it's in.
 
-### NPC roster (data-only, groundwork for future automations)
+### NPC roster (Search vs. every roster NPC's own Stealth)
 
 `RegionAutomationMainMacros.js`'s top dialog also manages a per-Region roster of NPC tokens (select NPC
-tokens on the canvas and click "Add Selected Token(s)"; double-click an entry to remove it) — this is
-groundwork for future automations
-(e.g. an all-NPCs Stealth check on Search, or an all-NPCs Perception check on Avoid Notice), not a working
-automation yet. The roster is stored on its own service `RegionBehavior` (`functionality: "npc-roster"`,
-`flags[MODULE_ID].config.npcs: [{ uuid, tokenId, name }]`), created the moment the roster goes from empty to
-non-empty and deleted when it empties out again (`findRosterBehavior`/`saveRoster` in
-`RegionAutomationMainMacros.js`) — same overall shape (`schemaVersion`/`functionality`/`config`/
-`triggeredTokenUuids`) as every other automation's flags, for consistency, even though only `config.npcs` is
-meaningful today.
+tokens on the canvas and click "Add Selected Token(s)"; double-click an entry to remove it). The roster is
+stored on its own service `RegionBehavior` (`functionality: "npc-roster"`, `flags[MODULE_ID].config.npcs:
+[{ uuid, tokenId, name }]`), created the moment the roster goes from empty to non-empty and deleted when it
+empties out again (`findRosterBehavior`/`saveRoster` in `RegionAutomationMainMacros.js`) — same overall shape
+(`schemaVersion`/`functionality`/`config`/`triggeredTokenUuids`) as every other automation's flags.
 
-It's deliberately inert: `system.events: []` and `system.source: ""` mean it can never fire, and
-`"npc-roster"` is absent from `migrate-behaviors.js`'s `SUPPORTED_FUNCTIONALITIES`, `executor.js`'s
-`FUNCTION_MACRO_NAMES`/`MODULE_FUNCTIONS`, and `RegionAutomationMainMacros.js`'s own `functionalityLabels`
-(which is what makes it automatically invisible to "Edit Existing" — that list is filtered by
-`functionalityLabels[functionality]` being truthy). A future change that teaches something to actually read
-`config.npcs` should register a matching entry in `MODULE_FUNCTIONS` the same way any other activity is
-ported — see "Functionality dispatch and porting an activity" above.
+It's a real, active automation: `system.events: ["tokenEnter"]` and `system.source` is a literal copy of
+`GENERIC_BEHAVIOR_SOURCE` (this paste-only file can't `import` it — `migrate-behaviors.js`'s
+`SUPPORTED_FUNCTIONALITIES` including `"npc-roster"` self-heals that copy back to the canonical source on the
+next `ready` if it ever drifts). When a character performing PF2e's real `"search"` exploration activity
+enters, `world-macros/NpcRosterFunctionMacros.js`/`NpcRosterRollHelperMacros.js` (registered in `executor.js`'s
+`MODULE_FUNCTIONS`, following exactly the porting shape described above) roll that character's Perception
+**once** and compare it against **every roster NPC's own Stealth DC (10 + their Stealth modifier)** — the
+mirror image of Investigate/DetectMagic's "one shared d20 vs several DCs" pattern, just keyed by NPC instead
+of by skill — producing one GM-whispered chat message with a table of all of them (some may be noticed, some
+not, since their Stealth differs). A roster entry whose Token can no longer be resolved (deleted from the
+Scene since being added) is reported in the table, not silently dropped.
+
+This is intentionally independent of, and can coexist on the same Region with, the pre-existing
+manually-configured single-target Search triad (`SearchConfigurationMacros.js` / `SearchFunctionMacros.js` /
+`SearchRollHelperMacros.js`, DC entered by hand for one specific thing) — that triad is unmodified; both fire
+from the same `tokenEnter` event independently, as separate Behaviors.
+
+`"npc-roster"` stays absent from `RegionAutomationMainMacros.js`'s own `functionalityLabels` (which is what
+makes it automatically invisible to "Edit Existing" — that list is filtered by
+`functionalityLabels[functionality]` being truthy) since it has no dedicated Configuration dialog to route to
+— this roster section is already its full editing UI.
 
 There is deliberately no drag-and-drop of canvas tokens onto this dialog. A placed Token is a PIXI sprite
 drawn inside a single `<canvas>` element, not a DOM element, so unlike a sidebar/compendium document (which

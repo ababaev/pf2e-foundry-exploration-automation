@@ -3,6 +3,50 @@ await (async () => {
     const raModuleId =
         "pf2e-exploration-automation";
 
+    /*
+     * A literal copy of migrate-behaviors.js's GENERIC_BEHAVIOR_SOURCE
+     * — this file can't import it (paste-only, no `import`). If it
+     * ever drifts from the real one, migrate-behaviors.js's
+     * SUPPORTED_FUNCTIONALITIES ("npc-roster" is in it) self-heals it
+     * back on the next `ready`, same safety net every other
+     * activity's Behavior already has.
+     */
+    const raRosterBehaviorSource = `
+    const raApi =
+        game.modules
+            .get("pf2e-exploration-automation")
+            ?.api;
+
+    if (
+        !raApi ||
+        typeof raApi.requestBehaviorExecution !==
+            "function"
+    ) {
+        console.error(
+            "Region Automation | Module API is unavailable.",
+            {
+                behavior,
+                event,
+                region,
+                scene,
+            },
+        );
+    } else {
+        await raApi.requestBehaviorExecution({
+            behaviorUuid:
+                behavior?.uuid,
+
+            tokenUuid:
+                event?.data?.token?.document?.uuid ??
+                event?.data?.token?.uuid,
+
+            eventName:
+                event?.name ??
+                "tokenEnter",
+        });
+    }
+    `.trim();
+
     const functionalityLabels = {
         investigate:
             "Investigation",
@@ -105,11 +149,12 @@ await (async () => {
      * The NPC roster is stored on its own service RegionBehavior
      * (functionality: "npc-roster"), created the moment the roster
      * goes from empty to non-empty and deleted when it empties out
-     * again. It carries no events/source, so it can never fire — it's
-     * pure data, deliberately absent from migrate-behaviors.js's
-     * SUPPORTED_FUNCTIONALITIES and executor.js's MODULE_FUNCTIONS,
-     * and (via functionalityLabels below) invisible to "Edit
-     * Existing". Future work teaches something to actually use it.
+     * again. It's a real, active automation (tokenEnter dispatches to
+     * NpcRosterFunctionMacros.js via executor.js's MODULE_FUNCTIONS,
+     * gated on the PF2e "search" exploration activity) — but it stays
+     * invisible to "Edit Existing" (functionalityLabels below has no
+     * entry for it) since it has no dedicated Configuration dialog to
+     * route to; this roster section is already its full editing UI.
      */
     const findRosterBehavior = () =>
         Array.from(
@@ -146,10 +191,10 @@ await (async () => {
 
                         system: {
                             events:
-                                [],
+                                ["tokenEnter"],
 
                             source:
-                                "",
+                                raRosterBehaviorSource,
                         },
 
                         disabled:

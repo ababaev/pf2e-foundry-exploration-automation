@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeActor, makeBehavior, makeRegion, makeToken, registerUuidDocument } from "./helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeActor, makeBehavior, makeExplorationItem, makeRegion, makeToken, registerUuidDocument } from "./helpers/mock-foundry.mjs";
 import { executeBehaviorRequest } from "../scripts/executor.js";
 
 function installSavingThrowFixture({ requesterUserId = "gm-1", requesterIsGM = true } = {}) {
@@ -141,6 +141,41 @@ test("executeBehaviorRequest: runs the ported module function for a supported fu
 
     assert.equal(result.ok, true);
     assert.equal(result.functionality, "saving-throw");
+    assert.equal(chatMessages.length, 1);
+    assert.deepEqual(behavior.flags["pf2e-exploration-automation"].triggeredTokenUuids, [token.document.uuid]);
+});
+
+test("executeBehaviorRequest: runs the ported module function for the npc-roster functionality", async () => {
+    const { chatMessages } = installBaseGlobals();
+
+    const itemId = "item-search";
+    const searcher = makeActor({
+        name: "Scout",
+        exploration: [itemId],
+        items: [makeExplorationItem({ id: itemId, slug: "search", name: "Search" })],
+        statistics: { perception: { label: "Perception", rank: 2, mod: 8 } },
+    });
+    searcher.testUserPermission = () => true;
+
+    const npcActor = makeActor({ name: "Goblin", type: "npc", statistics: { stealth: { label: "Stealth", rank: 1, mod: 5 } } });
+    const npcToken = makeToken(npcActor, { name: "Goblin" });
+    registerUuidDocument(npcToken.document.uuid, npcToken.document);
+
+    const region = makeRegion();
+    const behavior = makeBehavior({
+        functionality: "npc-roster",
+        config: { npcs: [{ uuid: npcToken.document.uuid, tokenId: npcToken.document.id, name: "Goblin" }] },
+        parent: region,
+    });
+    const token = makeToken(searcher);
+
+    registerUuidDocument(behavior.uuid, behavior);
+    registerUuidDocument(token.document.uuid, token.document);
+
+    const result = await executeBehaviorRequest(request({ behaviorUuid: behavior.uuid, tokenUuid: token.document.uuid }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.functionality, "npc-roster");
     assert.equal(chatMessages.length, 1);
     assert.deepEqual(behavior.flags["pf2e-exploration-automation"].triggeredTokenUuids, [token.document.uuid]);
 });

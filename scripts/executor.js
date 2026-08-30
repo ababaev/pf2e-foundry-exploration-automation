@@ -31,6 +31,7 @@ import { runInvestigate } from "./world-macros/InvestigateFunctionMacros.js";
 import { runSearch } from "./world-macros/SearchFunctionMacros.js";
 import { runDetectMagic } from "./world-macros/DetectMagicFunctionMacros.js";
 import { runSavingThrow } from "./world-macros/SavingThrowFunctionMacros.js";
+import { runNpcRoster } from "./world-macros/NpcRosterFunctionMacros.js";
 
 export { MODULE_ID };
 
@@ -55,6 +56,7 @@ const MODULE_FUNCTIONS = Object.freeze({
     search: runSearch,
     "detect-magic": runDetectMagic,
     "saving-throw": runSavingThrow,
+    "npc-roster": runNpcRoster,
 });
 
 /**

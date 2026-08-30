@@ -66,8 +66,9 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
 
 /**
  * @param {string} label - Human-readable activity name for logs/notifications, e.g. "Search".
- * @param {string} activity - Functionality flag this Behavior's flags.functionality must match, e.g. "search". Also used as the exploration-activity slug for the checkExplorationActivity gate unless `requireExplorationActivity` is false.
- * @param {boolean} [requireExplorationActivity] - Whether the actor must currently be performing the `activity` exploration activity. Defaults to true; pass false for triggers not tied to a selectable PF2e exploration activity (e.g. Saving Throw), which then fire regardless of what the actor is doing.
+ * @param {string} activity - Functionality flag this Behavior's flags.functionality must match, e.g. "search". Also used as the exploration-activity slug for the checkExplorationActivity gate unless `explorationActivity` is given or `requireExplorationActivity` is false.
+ * @param {string} [explorationActivity] - Exploration-activity slug to gate on, when it differs from `activity` (e.g. the "npc-roster" functionality gates on the real PF2e "search" activity, not an exploration activity called "npc-roster"). Defaults to `activity`.
+ * @param {boolean} [requireExplorationActivity] - Whether the actor must currently be performing the `explorationActivity` exploration activity. Defaults to true; pass false for triggers not tied to a selectable PF2e exploration activity (e.g. Saving Throw), which then fire regardless of what the actor is doing.
  * @param {boolean} [skipRegistration] - Skip the one-shot triggeredTokenUuids registration (and its technical-failure rollback) entirely. Defaults to false; pass true for on-demand runs with no physical Region entry to dedupe against.
  * @param {object} behavior - RegionBehavior document.
  * @param {object} event - Region event ({ name, data: { token }, ... }).
@@ -87,6 +88,7 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
 export async function runTriggeredCheck({
     label,
     activity,
+    explorationActivity = activity,
     requireExplorationActivity = true,
     skipRegistration = false,
     behavior = null,
@@ -171,7 +173,7 @@ export async function runTriggeredCheck({
             explorationResult = await callWithResultBox(checkExplorationActivity, {
                 token: resolvedToken,
                 actor: resolvedActor,
-                activity,
+                activity: explorationActivity,
                 debug: true,
             });
         } catch (error) {

@@ -298,9 +298,15 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' adds every currently-c
     await runMacro();
 
     assert.equal(region.behaviors.length, 1);
-    const npcs = region.behaviors[0].flags[MODULE_ID].config.npcs;
+    const rosterBehavior = region.behaviors[0];
+    const npcs = rosterBehavior.flags[MODULE_ID].config.npcs;
     assert.equal(npcs.length, 2);
     assert.deepEqual(npcs.map(npc => npc.name).sort(), ["Goblin A", "Goblin B"]);
+
+    // The roster Behavior is a real, active automation now — not the
+    // inert system.events: []/source: "" it started as.
+    assert.deepEqual(rosterBehavior.system.events, ["tokenEnter"]);
+    assert.match(rosterBehavior.system.source, /\.requestBehaviorExecution/);
 });
 
 test("RegionAutomationMainMacros: 'Add Selected Token(s)' with nothing selected warns and creates no Behavior", async () => {

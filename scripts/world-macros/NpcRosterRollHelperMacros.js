@@ -1,0 +1,198 @@
+import { escapeHTML } from "./shared/html.js";
+import { getDegreeOfSuccess, getResultStyle } from "./shared/checks.js";
+import { getActiveGMs } from "./shared/gm.js";
+import { MODULE_ID } from "../module-id.js";
+
+/**
+ * Resolve one roster entry's current Token/Actor and Stealth DC.
+ *
+ * Returns a row descriptor either way — an entry whose Token can no
+ * longer be resolved (deleted from the Scene since being added to the
+ * roster) or whose Actor has no Stealth statistic is reported in the
+ * table rather than silently dropped, with `dc`/`degree` left null.
+ */
+async function resolveNpcRow(npc, total, naturalRoll) {
+    let tokenDocument = null;
+
+    try {
+        tokenDocument = await fromUuid(npc.uuid);
+    } catch (error) {
+        console.warn("Region Automation | Could not resolve a roster Token", { npc, error });
+    }
+
+    const npcActor = tokenDocument?.actor ?? null;
+
+    if (!npcActor) {
+        return { npc, unavailable: true, dc: null, degree: null };
+    }
+
+    const stealthStatistic = npcActor.getStatistic?.("stealth") ?? npcActor.skills?.stealth ?? null;
+
+    if (!stealthStatistic) {
+        return { npc, unavailable: false, noStealth: true, dc: null, degree: null };
+    }
+
+    const stealthModifier = Number(stealthStatistic.check?.mod ?? stealthStatistic.mod ?? 0);
+    const dc = 10 + stealthModifier;
+    const degree = getDegreeOfSuccess(total, dc, naturalRoll);
+
+    return { npc, unavailable: false, noStealth: false, dc, degree };
+}
+
+function npcRowHTML(row) {
+    const label = escapeHTML(row.npc.name ?? "Unknown NPC");
+
+    if (row.unavailable) {
+        return `
+            <tr>
+                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
+                    ${label}
+                </td>
+                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-style: italic; opacity: 0.7;">
+                    Token no longer available
+                </td>
+            </tr>
+        `;
+    }
+
+    if (row.noStealth) {
+        return `
+            <tr>
+                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
+                    ${label}
+                </td>
+                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-style: italic; opacity: 0.7;">
+                    No Stealth statistic
+                </td>
+            </tr>
+        `;
+    }
+
+    return `
+        <tr>
+            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
+                ${label}
+            </td>
+            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); ${getResultStyle(row.degree)}">
+                vs DC ${escapeHTML(row.dc)}
+            </td>
+        </tr>
+    `;
+}
+
+function buildContent({ naturalRoll, total, rows }) {
+    const rowsHTML = rows.map(npcRowHTML).join("");
+
+    return `
+        <section class="pf2e-exploration-automation npc-roster-search-result">
+            <header style="margin-bottom: 0.6rem;">
+                <strong>NPC Roster Search</strong>
+            </header>
+
+            <p style="margin: 0 0 0.6rem;">
+                Perception total: <strong>${escapeHTML(total)}</strong>
+                (natural ${escapeHTML(naturalRoll)})
+            </p>
+
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr>
+                        <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">NPC</th>
+                        <th style="text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-dark);">Result</th>
+                    </tr>
+                </thead>
+                <tbody>${rowsHTML}</tbody>
+            </table>
+        </section>
+    `;
+}
+
+/**
+ * Rolls the entering character's Perception exactly once and compares
+ * it against every roster NPC's own Stealth DC (10 + their Stealth
+ * modifier) — the mirror image of Investigate/DetectMagic's "one
+ * shared d20 vs several DCs" pattern, keyed by NPC instead of by
+ * skill.
+ */
+export async function runNpcRosterRoll({ actor = null, token = null, behavior = null, event = null, region = null, scene = null, debug = true } = {}) {
+    const tokenDocument = token?.document ?? token ?? null;
+
+    if (!actor || !tokenDocument || !behavior) {
+        const result = { ok: false, reason: "incomplete-context", actor, token: tokenDocument, behavior };
+        console.error("Region Automation | NPC Roster Search roll helper received incomplete context", result);
+        return result;
+    }
+
+    const config = behavior.flags?.[MODULE_ID]?.config ?? {};
+    const npcs = Array.isArray(config.npcs) ? config.npcs : [];
+
+    if (npcs.length === 0) {
+        const result = { ok: false, reason: "empty-roster" };
+        console.warn("Region Automation | NPC Roster Search has no roster NPCs configured", result);
+        return result;
+    }
+
+    const perceptionStatistic = actor.getStatistic?.("perception") ?? actor.perception ?? null;
+
+    if (!perceptionStatistic) {
+        const result = { ok: false, reason: "perception-statistic-not-found", actorUuid: actor.uuid };
+        console.error("Region Automation | Perception statistic was not found", result);
+        return result;
+    }
+
+    const activeGMs = getActiveGMs();
+
+    if (activeGMs.length === 0) {
+        const result = { ok: false, reason: "no-active-gm" };
+        console.error("Region Automation | No active GM can receive the NPC Roster Search result", result);
+        return result;
+    }
+
+    const d20Roll = await new Roll("1d20").evaluate();
+    const naturalRoll = Number(d20Roll.total);
+    const modifier = Number(perceptionStatistic.check?.mod ?? perceptionStatistic.mod ?? 0);
+    const total = naturalRoll + modifier;
+
+    const rows = await Promise.all(npcs.map(npc => resolveNpcRow(npc, total, naturalRoll)));
+
+    const message = await ChatMessage.create({
+        author: game.user.id,
+        speaker: { alias: actor.name ?? tokenDocument.name ?? "NPC Roster Search" },
+        whisper: activeGMs.map(user => user.id),
+        content: buildContent({ naturalRoll, total, rows }),
+    });
+
+    const result = {
+        ok: true,
+        reason: "rolled",
+        naturalRoll,
+        total,
+        roll: d20Roll,
+        rows,
+        message,
+        actorUuid: actor.uuid,
+        tokenUuid: tokenDocument.uuid,
+        behaviorUuid: behavior.uuid,
+        regionUuid: region?.uuid ?? null,
+        sceneUuid: scene?.uuid ?? null,
+        eventName: event?.name ?? null,
+    };
+
+    if (debug) {
+        console.group(`Region Automation | NPC Roster Search roll helper | ${actor.name}`);
+        console.log("Natural d20", naturalRoll, "Total", total);
+        console.table(
+            rows.map(row => ({
+                npc: row.npc.name,
+                dc: row.dc,
+                degree: row.degree,
+                unavailable: row.unavailable ?? false,
+                noStealth: row.noStealth ?? false,
+            })),
+        );
+        console.log("Complete helper result", result);
+        console.groupEnd();
+    }
+
+    return result;
+}
