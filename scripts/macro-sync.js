@@ -68,10 +68,16 @@ const MANAGED_MACROS = Object.freeze([
  * modules/<id>/... path) keeps this correct under any route prefix or
  * reverse proxy, since it's the exact URL the browser loaded this
  * module from.
+ *
+ * cache: "no-store" matters here specifically: this fetch() runs during
+ * the ready hook, well after the page's own initial load has finished, so
+ * a browser hard-reload (which only forces a fresh fetch of the page's
+ * initial resources) does nothing to stop this call from being served a
+ * stale cached response indefinitely otherwise.
  */
 async function fetchMacroSource(file) {
     const url = new URL(file, import.meta.url);
-    const response = await fetch(url);
+    const response = await fetch(url, { cache: "no-store" });
 
     if (!response.ok) {
         throw new Error(`Could not fetch macro source "${url}" (${response.status}).`);

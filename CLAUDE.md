@@ -138,8 +138,12 @@ Newly created Behaviors are normalized the same way via the `createRegionBehavio
 `scripts/macro-sync.js`'s `syncWorldMacros()` runs right before behavior migration, in the same primary-GM
 `ready`-hook block in `main.js`. For each entry in its `MANAGED_MACROS` table it `fetch()`es the live source of
 the matching `scripts/world-macros/*.js` file (resolved against `import.meta.url`, so it's correct under any
-route prefix), then creates a `Macro` document with that name/command if none exists, or updates the existing
-one in place if its stored `command` has drifted from the source — so a `git pull` + world reload is the
+route prefix, with `cache: "no-store"` — this fetch runs during the `ready` hook, well after the page's own
+initial load, so without it a browser hard-reload does nothing to stop a stale cached response from being
+served indefinitely; this was the actual cause of a real "my macro edit isn't showing up no matter how many
+times I hard-reload" incident), then creates a `Macro` document with that name/command if none exists, or
+updates the existing one in place if its stored `command` has drifted from the source — so a `git pull` +
+world reload is the
 entire update story, never a manual re-paste. Managed macros are filed under a `"PF2e Exploration
 Automation"` Macro folder and created with `ownership.default: OWNER` so any GM (not just whichever one's
 client ran the sync) can see and run them. All 4 entries — `RegionAutomationMainMacros`,
