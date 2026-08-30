@@ -1,6 +1,7 @@
 import { escapeHTML } from "./shared/html.js";
 import { getDegreeOfSuccess, getResultStyle } from "./shared/checks.js";
 import { getActiveGMs } from "./shared/gm.js";
+import { getNaturalD20, getTargetRollOptions } from "./SearchRollHelperMacros.js";
 import { MODULE_ID } from "../module-id.js";
 
 /**
@@ -80,7 +81,7 @@ function npcRowHTML(row) {
     `;
 }
 
-function buildContent({ naturalRoll, total, rows }) {
+function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen }) {
     const rowsHTML = rows.map(npcRowHTML).join("");
 
     return `
@@ -103,6 +104,17 @@ function buildContent({ naturalRoll, total, rows }) {
                 </thead>
                 <tbody>${rowsHTML}</tbody>
             </table>
+
+            ${
+                hasSenseTheUnseen
+                    ? `
+                        <p style="margin-top: 0.7rem; font-style: italic;">
+                            This character has <strong>Sense the Unseen</strong> — consider its effect on any
+                            failed results above.
+                        </p>
+                    `
+                    : ""
+            }
         </section>
     `;
 }
@@ -140,6 +152,12 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         return result;
     }
 
+    if (typeof perceptionStatistic.roll !== "function") {
+        const result = { ok: false, reason: "perception-roll-not-supported", actorUuid: actor.uuid };
+        console.error("Region Automation | Perception statistic does not support .roll()", result);
+        return result;
+    }
+
     const activeGMs = getActiveGMs();
 
     if (activeGMs.length === 0) {
@@ -148,10 +166,32 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         return result;
     }
 
-    const d20Roll = await new Roll("1d20").evaluate();
-    const naturalRoll = Number(d20Roll.total);
-    const modifier = Number(perceptionStatistic.check?.mod ?? perceptionStatistic.mod ?? 0);
-    const total = naturalRoll + modifier;
+    /*
+     * Rolling through PF2e's own Check API (rather than a raw
+     * new Roll("1d20")) — with the same roll options native Seek uses
+     * for an NPC target — is what lets PF2e's own Rule Elements for
+     * Keen Eyes, Sensate Gnome, Sharp-Eared Catfolk, etc. apply
+     * automatically, exactly like the single-target Search automation
+     * already gets via its native Seek action call.
+     */
+    const perceptionRoll = await perceptionStatistic.roll({
+        skipDialog: true,
+        createMessage: false,
+        messageMode: "blindroll",
+        title: "NPC Roster Search",
+        slug: "pf2e-exploration-automation-npc-roster",
+        extraRollOptions: getTargetRollOptions("npc"),
+    });
+
+    if (!perceptionRoll) {
+        const result = { ok: false, reason: "perception-roll-returned-null", actorUuid: actor.uuid };
+        console.error("Region Automation | PF2e returned no Perception roll", result);
+        return result;
+    }
+
+    const naturalRoll = getNaturalD20(perceptionRoll);
+    const total = Number(perceptionRoll.total);
+    const hasSenseTheUnseen = Boolean(actor.items?.find?.(item => item.slug === "sense-the-unseen"));
 
     const rows = await Promise.all(npcs.map(npc => resolveNpcRow(npc, total, naturalRoll)));
 
@@ -159,7 +199,7 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         author: game.user.id,
         speaker: { alias: actor.name ?? tokenDocument.name ?? "NPC Roster Search" },
         whisper: activeGMs.map(user => user.id),
-        content: buildContent({ naturalRoll, total, rows }),
+        content: buildContent({ naturalRoll, total, rows, hasSenseTheUnseen }),
     });
 
     const result = {
@@ -167,8 +207,9 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         reason: "rolled",
         naturalRoll,
         total,
-        roll: d20Roll,
+        roll: perceptionRoll,
         rows,
+        hasSenseTheUnseen,
         message,
         actorUuid: actor.uuid,
         tokenUuid: tokenDocument.uuid,

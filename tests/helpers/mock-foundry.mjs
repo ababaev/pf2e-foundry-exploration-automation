@@ -166,7 +166,7 @@ export function makeActor({
         name,
         type,
         system: { exploration, ...system },
-        items: { get: itemId => itemMap.get(itemId) ?? null },
+        items: { get: itemId => itemMap.get(itemId) ?? null, find: predicate => items.find(predicate) ?? null },
         skills: statistics,
         saves: statistics,
         getStatistic(slug) {

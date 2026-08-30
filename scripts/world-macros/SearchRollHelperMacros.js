@@ -25,7 +25,7 @@ const TARGET_TYPES = Object.freeze({
  * predicate seen in the actor data while retaining compatibility with
  * contexts that use the condition-prefixed form.
  */
-function getTargetRollOptions(targetType) {
+export function getTargetRollOptions(targetType) {
     if (targetType === "npc") {
         return [
             "action:seek",
@@ -60,7 +60,7 @@ function getTargetRollOptions(targetType) {
  * PF2e CheckRoll. This does not calculate the roll, it only reads the
  * die result PF2e already produced.
  */
-function getNaturalD20(roll) {
+export function getNaturalD20(roll) {
     const candidates = [...(roll?.dice ?? []), ...(roll?.terms ?? [])];
     const seen = new Set();
 

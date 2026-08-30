@@ -3,13 +3,36 @@ import assert from "node:assert/strict";
 import { installBaseGlobals, makeActor, makeBehavior, makeExplorationItem, makeToken, registerUuidDocument } from "../helpers/mock-foundry.mjs";
 import { runNpcRoster } from "../../scripts/world-macros/NpcRosterFunctionMacros.js";
 
-function searchingActor(statistics = {}) {
+/**
+ * A Perception statistic that rolls through PF2e's Check API
+ * (`.roll({ extraRollOptions })`), matching how NpcRosterRollHelperMacros.js
+ * actually calls it (same shape SavingThrowRollHelperMacros.js's tests use
+ * for saveStatistic.roll()) — a raw new Roll("1d20") mock wouldn't exercise
+ * that call at all.
+ */
+function rollingPerception({ total, naturalRoll, modifier = 8, onRoll } = {}) {
+    return {
+        label: "Perception",
+        rank: 2,
+        mod: modifier,
+        async roll(args) {
+            onRoll?.(args);
+            return {
+                total,
+                dice: naturalRoll == null ? [] : [{ faces: 20, total: naturalRoll }],
+                options: { totalModifier: modifier },
+            };
+        },
+    };
+}
+
+function searchingActor({ perception, items = [] } = {}) {
     const itemId = "item-search";
     return makeActor({
         name: "Scout",
         exploration: [itemId],
-        items: [makeExplorationItem({ id: itemId, slug: "search", name: "Search" })],
-        statistics: { perception: { label: "Perception", rank: 2, mod: 8 }, ...statistics },
+        items: [makeExplorationItem({ id: itemId, slug: "search", name: "Search" }), ...items],
+        statistics: { perception: perception ?? rollingPerception({ total: 18, naturalRoll: 10 }) },
     });
 }
 
@@ -27,7 +50,7 @@ function makeRosterBehavior(npcs) {
 test("NPC Roster Search: gates on the PF2e 'search' exploration activity, not an activity literally called 'npc-roster'", async () => {
     const { chatMessages } = installBaseGlobals();
     // No exploration items at all — not performing Search.
-    const actor = makeActor({ exploration: [], statistics: { perception: { label: "Perception", rank: 2, mod: 8 } } });
+    const actor = makeActor({ exploration: [], statistics: { perception: rollingPerception({ total: 18, naturalRoll: 10 }) } });
     const token = makeToken(actor);
     const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);
 
@@ -39,10 +62,8 @@ test("NPC Roster Search: gates on the PF2e 'search' exploration activity, not an
 
 test("NPC Roster Search: rolls Perception once and compares it against every roster NPC's own Stealth DC", async () => {
     const { chatMessages } = installBaseGlobals();
-    globalThis.Roll.nextTotal = 15;
-    const actor = searchingActor();
+    const actor = searchingActor({ perception: rollingPerception({ total: 23, naturalRoll: 15 }) });
     const token = makeToken(actor);
-    // total = 15 natural + 8 modifier = 23.
     // Goblin: DC 10 + 5 = 15 -> 23 vs 15 is a success.
     // Assassin: DC 10 + 20 = 30 -> 23 vs 30 is a failure.
     const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5), npcWithStealth("Assassin", 20)]);
@@ -70,9 +91,47 @@ test("NPC Roster Search: rolls Perception once and compares it against every ros
     assert.match(chatMessages[0].content, /Assassin/);
 });
 
+test("NPC Roster Search: rolls through PF2e's Check API with the same NPC-Seek roll options native Search uses, so Keen Eyes/Sensate Gnome/Sharp-Eared Catfolk apply", async () => {
+    installBaseGlobals();
+    let capturedArgs = null;
+    const actor = searchingActor({
+        perception: rollingPerception({ total: 20, naturalRoll: 12, onRoll: args => { capturedArgs = args; } }),
+    });
+    const token = makeToken(actor);
+    const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);
+
+    await runNpcRoster({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
+
+    assert.ok(capturedArgs, "perceptionStatistic.roll() was called");
+    assert.ok(Array.isArray(capturedArgs.extraRollOptions));
+    assert.ok(capturedArgs.extraRollOptions.includes("target:undetected"));
+    assert.ok(capturedArgs.extraRollOptions.includes("action:seek"));
+});
+
+test("NPC Roster Search: notes when the searching character has Sense the Unseen", async () => {
+    const { chatMessages } = installBaseGlobals();
+    const actor = searchingActor({ items: [makeExplorationItem({ id: "item-stu", slug: "sense-the-unseen", name: "Sense the Unseen" })] });
+    const token = makeToken(actor);
+    const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);
+
+    await runNpcRoster({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
+
+    assert.match(chatMessages[0].content, /Sense the Unseen/);
+});
+
+test("NPC Roster Search: says nothing about Sense the Unseen when the character doesn't have it", async () => {
+    const { chatMessages } = installBaseGlobals();
+    const actor = searchingActor();
+    const token = makeToken(actor);
+    const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);
+
+    await runNpcRoster({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
+
+    assert.doesNotMatch(chatMessages[0].content, /Sense the Unseen/);
+});
+
 test("NPC Roster Search: an unresolvable roster Token is reported in the table instead of silently dropped", async () => {
     const { chatMessages } = installBaseGlobals();
-    globalThis.Roll.nextTotal = 10;
     const actor = searchingActor();
     const token = makeToken(actor);
     // Not registered via registerUuidDocument, so fromUuid resolves nothing.
@@ -114,7 +173,6 @@ test("NPC Roster Search: an empty roster is invalid configuration and never roll
 
 test("NPC Roster Search: a second tokenEnter for the same token does not roll again", async () => {
     const { chatMessages } = installBaseGlobals();
-    globalThis.Roll.nextTotal = 10;
     const actor = searchingActor();
     const token = makeToken(actor);
     const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);

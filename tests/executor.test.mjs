@@ -153,7 +153,16 @@ test("executeBehaviorRequest: runs the ported module function for the npc-roster
         name: "Scout",
         exploration: [itemId],
         items: [makeExplorationItem({ id: itemId, slug: "search", name: "Search" })],
-        statistics: { perception: { label: "Perception", rank: 2, mod: 8 } },
+        statistics: {
+            perception: {
+                label: "Perception",
+                rank: 2,
+                mod: 8,
+                async roll() {
+                    return { total: 23, dice: [{ faces: 20, total: 15 }], options: { totalModifier: 8 } };
+                },
+            },
+        },
     });
     searcher.testUserPermission = () => true;
 

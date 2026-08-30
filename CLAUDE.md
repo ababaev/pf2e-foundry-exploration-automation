@@ -349,11 +349,20 @@ It's a real, active automation: `system.events: ["tokenEnter"]` and `system.sour
 next `ready` if it ever drifts). When a character performing PF2e's real `"search"` exploration activity
 enters, `world-macros/NpcRosterFunctionMacros.js`/`NpcRosterRollHelperMacros.js` (registered in `executor.js`'s
 `MODULE_FUNCTIONS`, following exactly the porting shape described above) roll that character's Perception
-**once** and compare it against **every roster NPC's own Stealth DC (10 + their Stealth modifier)** — the
-mirror image of Investigate/DetectMagic's "one shared d20 vs several DCs" pattern, just keyed by NPC instead
-of by skill — producing one GM-whispered chat message with a table of all of them (some may be noticed, some
-not, since their Stealth differs). A roster entry whose Token can no longer be resolved (deleted from the
-Scene since being added) is reported in the table, not silently dropped.
+**once** — through the actor's own `perceptionStatistic.roll({ extraRollOptions })` (PF2e's Check API, the
+same mechanism `SavingThrowRollHelperMacros.js` uses for saves), not a raw `new Roll("1d20")` — and compare
+its total against **every roster NPC's own Stealth DC (10 + their Stealth modifier)**, the mirror image of
+Investigate/DetectMagic's "one shared roll vs several DCs" pattern, just keyed by NPC instead of by skill.
+Rolling through the Check API (rather than a raw d20 plus a manually-added static modifier) matters: it's
+what lets PF2e's own Rule Elements for Keen Eyes, Sensate Gnome, Sharp-Eared Catfolk, etc. apply
+automatically — `NpcRosterRollHelperMacros.js` imports `getTargetRollOptions("npc")` and `getNaturalD20`
+directly from `SearchRollHelperMacros.js` (both exported for exactly this reuse) so it sends the *same* roll
+options native Search's Seek action already relies on for those feats, rather than a second copy that could
+drift. If the searching character has a `"sense-the-unseen"` item, the chat message adds a note flagging that
+to the GM — its effect isn't computed automatically, just surfaced so the GM can apply it by hand. The result
+is one GM-whispered chat message with a table of every roster NPC (some may be noticed, some not, since their
+Stealth differs). A roster entry whose Token can no longer be resolved (deleted from the Scene since being
+added) is reported in the table, not silently dropped.
 
 This is intentionally independent of, and can coexist on the same Region with, the pre-existing
 manually-configured single-target Search triad (`SearchConfigurationMacros.js` / `SearchFunctionMacros.js` /
