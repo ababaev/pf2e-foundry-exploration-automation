@@ -324,6 +324,30 @@ near the top (guard clauses + `editorState` seeding) and one near the bottom (cr
 in between operates purely on `editorState`/`submittedConfiguration` and doesn't know or care which mode
 it's in.
 
+### NPC roster (data-only, groundwork for future automations)
+
+`RegionAutomationMainMacros.js`'s top dialog also manages a per-Region roster of NPC tokens (drag an NPC
+token onto the drop zone; double-click an entry to remove it) — this is groundwork for future automations
+(e.g. an all-NPCs Stealth check on Search, or an all-NPCs Perception check on Avoid Notice), not a working
+automation yet. The roster is stored on its own service `RegionBehavior` (`functionality: "npc-roster"`,
+`flags[MODULE_ID].config.npcs: [{ uuid, tokenId, name }]`), created the moment the roster goes from empty to
+non-empty and deleted when it empties out again (`findRosterBehavior`/`saveRoster` in
+`RegionAutomationMainMacros.js`) — same overall shape (`schemaVersion`/`functionality`/`config`/
+`triggeredTokenUuids`) as every other automation's flags, for consistency, even though only `config.npcs` is
+meaningful today.
+
+It's deliberately inert: `system.events: []` and `system.source: ""` mean it can never fire, and
+`"npc-roster"` is absent from `migrate-behaviors.js`'s `SUPPORTED_FUNCTIONALITIES`, `executor.js`'s
+`FUNCTION_MACRO_NAMES`/`MODULE_FUNCTIONS`, and `RegionAutomationMainMacros.js`'s own `functionalityLabels`
+(which is what makes it automatically invisible to "Edit Existing" — that list is filtered by
+`functionalityLabels[functionality]` being truthy). A future change that teaches something to actually read
+`config.npcs` should register a matching entry in `MODULE_FUNCTIONS` the same way any other activity is
+ported — see "Functionality dispatch and porting an activity" above.
+
+Token drops are read via the same `TextEditorClass.getDragEventData(event)` (falling back to
+`JSON.parse(event.dataTransfer.getData(...))`) pattern `wireDocumentDrop` already uses for Journal/Actor/Item
+links, just validating `data.type === "Token"` and the resolved token's `actor?.type === "npc"` instead.
+
 ### Conventions to preserve
 
 - `MODULE_ID`: module-only files `import { MODULE_ID } from "./module-id.js"` (or re-export it, see above).

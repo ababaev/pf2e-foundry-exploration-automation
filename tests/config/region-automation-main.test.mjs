@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { installBaseGlobals, makeBehavior, makeRegion, MODULE_ID } from "../helpers/mock-foundry.mjs";
+import { installBaseGlobals, makeActor, makeBehavior, makeRegion, makeToken, registerUuidDocument, MODULE_ID } from "../helpers/mock-foundry.mjs";
 import { runPastedMacro } from "../helpers/run-macro.mjs";
+import { queueDialogResponses } from "../helpers/fake-dialog.mjs";
 import { runSearchConfiguration } from "../../scripts/world-macros/SearchConfigurationMacros.js";
 
 const MACRO_URL = new URL("../../scripts/world-macros/RegionAutomationMainMacros.js", import.meta.url);
@@ -183,7 +184,7 @@ test("RegionAutomationMainMacros end-to-end: editing dispatches into the real ru
     // DialogV2 too, so the mock has to route by dialog title/content
     // rather than a fixed call index.
     globalThis.foundry.applications.api.DialogV2.wait = async config => {
-        if (config.window.title === "Region Automation — Add Automation") {
+        if (config.window.title.startsWith("RadioArkadio")) {
             return config.buttons.find(b => b.action === "edit").callback();
         }
 
@@ -205,4 +206,147 @@ test("RegionAutomationMainMacros end-to-end: editing dispatches into the real ru
     // Fields not touched by this submission fell back to the existing config.
     assert.equal(existing.flags[MODULE_ID].config.subject, "Old Cache");
     assert.deepEqual(existing.flags[MODULE_ID].triggeredTokenUuids, ["Token.already-triggered"]);
+});
+
+function dropZoneResponse({ elements = {}, interact }) {
+    return {
+        action: "cancel",
+        elements: { "[data-ra-npc-dropzone]": {}, "[data-ra-npc-list]": {}, ...elements },
+        interact,
+    };
+}
+
+async function fireDrop(elements, payload) {
+    await elements["[data-ra-npc-dropzone]"].fire("drop", {
+        preventDefault() {},
+        dataTransfer: { getData: () => JSON.stringify(payload) },
+    });
+}
+
+test("RegionAutomationMainMacros: dropping an NPC token onto the roster zone adds it and creates the npc-roster Behavior", async () => {
+    const region = makeRegion();
+    setupWorld({ regions: [{ document: region }] });
+
+    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
+    registerUuidDocument(npcToken.document.uuid, npcToken.document);
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            interact: elements => fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid }),
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 1);
+    const rosterBehavior = region.behaviors[0];
+    assert.equal(rosterBehavior.flags[MODULE_ID].functionality, "npc-roster");
+    assert.deepEqual(rosterBehavior.flags[MODULE_ID].config.npcs, [
+        { uuid: npcToken.document.uuid, tokenId: npcToken.document.id, name: "Goblin Scout" },
+    ]);
+});
+
+test("RegionAutomationMainMacros: dropping a non-NPC token, or a non-Token payload, is rejected and creates no Behavior", async () => {
+    const region = makeRegion();
+    const { notifications } = setupWorld({ regions: [{ document: region }] });
+
+    const characterToken = makeToken(makeActor({ name: "Hero", type: "character" }));
+    registerUuidDocument(characterToken.document.uuid, characterToken.document);
+    registerUuidDocument("JournalEntry.notes", { name: "Notes" });
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            interact: async elements => {
+                await fireDrop(elements, { type: "Token", uuid: characterToken.document.uuid });
+                await fireDrop(elements, { type: "JournalEntry", uuid: "JournalEntry.notes" });
+            },
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 0);
+    assert.match(notifications.warn.find(m => /only NPC tokens/.test(m)) ?? "", /only NPC tokens/);
+    assert.match(notifications.warn.find(m => /drag a Token/.test(m)) ?? "", /drag a Token/);
+});
+
+test("RegionAutomationMainMacros: dropping the same NPC token twice is rejected as a duplicate", async () => {
+    const region = makeRegion();
+    const { notifications } = setupWorld({ regions: [{ document: region }] });
+
+    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
+    registerUuidDocument(npcToken.document.uuid, npcToken.document);
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            interact: async elements => {
+                await fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid });
+                await fireDrop(elements, { type: "Token", uuid: npcToken.document.uuid });
+            },
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 1);
+    assert.equal(region.behaviors[0].flags[MODULE_ID].config.npcs.length, 1);
+    assert.match(notifications.warn.find(m => /already in this Region/.test(m)) ?? "", /already in this Region/);
+});
+
+test("RegionAutomationMainMacros: double-clicking the last roster NPC removes it and deletes the npc-roster Behavior", async () => {
+    const region = makeRegion();
+    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
+
+    const rosterBehavior = makeBehavior({
+        functionality: "npc-roster",
+        config: { npcs: [{ uuid: npcToken.document.uuid, tokenId: npcToken.document.id, name: "Goblin Scout" }] },
+        parent: region,
+    });
+    region.behaviors.push(rosterBehavior);
+
+    setupWorld({ regions: [{ document: region }] });
+
+    const { wait } = queueDialogResponses([
+        dropZoneResponse({
+            interact: async elements => {
+                const chip = elements["[data-ra-npc-list]"].querySelectorAll("[data-ra-chip]")[0];
+                await chip.fire("dblclick");
+            },
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    assert.equal(region.behaviors.length, 0);
+});
+
+test("RegionAutomationMainMacros: reopening the dialog seeds the roster list from the Region's existing npc-roster Behavior", async () => {
+    const region = makeRegion();
+    const npcToken = makeToken(makeActor({ name: "Goblin Scout", type: "npc" }));
+
+    const rosterBehavior = makeBehavior({
+        functionality: "npc-roster",
+        config: { npcs: [{ uuid: npcToken.document.uuid, tokenId: npcToken.document.id, name: "Goblin Scout" }] },
+        parent: region,
+    });
+    region.behaviors.push(rosterBehavior);
+
+    setupWorld({ regions: [{ document: region }] });
+
+    const { wait, elementsByCall } = queueDialogResponses([dropZoneResponse({})]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    // The initial render seeded Zone B's list from the existing Behavior.
+    assert.match(elementsByCall[0]["[data-ra-npc-list]"].innerHTML, /Goblin Scout/);
+    assert.match(elementsByCall[0]["[data-ra-npc-list]"].innerHTML, new RegExp(npcToken.document.id));
+
+    // The Behavior wasn't touched (no add/remove happened), just read.
+    assert.equal(region.behaviors.length, 1);
+    assert.deepEqual(region.behaviors[0], rosterBehavior);
 });

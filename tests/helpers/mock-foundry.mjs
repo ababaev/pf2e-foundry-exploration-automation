@@ -182,14 +182,41 @@ export function makeExplorationItem({ name, slug, id: itemId = id("item"), trait
 }
 
 export function makeToken(actor, { name, parent = globalThis.canvas?.scene ?? null } = {}) {
+    const tokenId = id("token");
+
     const document = {
-        uuid: `Token.${id("uuid")}`,
+        id: tokenId,
+        uuid: `Token.${tokenId}`,
         documentName: "Token",
         actor,
         name: name ?? actor?.name,
         parent,
     };
     return { document, actor, name: name ?? actor?.name };
+}
+
+/**
+ * Attaches a real (in-memory) dotted-path .update() and a .delete() that
+ * splices the behavior out of `getBehaviors()` to a plain behavior object,
+ * so registration/rollback/roster logic can exercise both for real.
+ */
+function withBehaviorMutators(behavior, getBehaviors) {
+    behavior.update = async changes => {
+        for (const [path, value] of Object.entries(changes)) {
+            const parts = path.split(".");
+            let cursor = behavior;
+            for (let i = 0; i < parts.length - 1; i += 1) cursor = cursor[parts[i]] ??= {};
+            cursor[parts.at(-1)] = value;
+        }
+    };
+
+    behavior.delete = async () => {
+        const list = getBehaviors();
+        const index = list.indexOf(behavior);
+        if (index !== -1) list.splice(index, 1);
+    };
+
+    return behavior;
 }
 
 /**
@@ -205,16 +232,8 @@ export function makeBehavior({ functionality, config = {}, triggeredTokenUuids =
         active,
         parent,
         flags: { [MODULE_ID]: { functionality, config, triggeredTokenUuids: [...triggeredTokenUuids] } },
-        async update(changes) {
-            for (const [path, value] of Object.entries(changes)) {
-                const parts = path.split(".");
-                let cursor = behavior;
-                for (let i = 0; i < parts.length - 1; i += 1) cursor = cursor[parts[i]] ??= {};
-                cursor[parts.at(-1)] = value;
-            }
-        },
     };
-    return behavior;
+    return withBehaviorMutators(behavior, () => parent?.behaviors ?? []);
 }
 
 export function makeRegion({ name = "Test Region", behaviors = [] } = {}) {
@@ -224,7 +243,9 @@ export function makeRegion({ name = "Test Region", behaviors = [] } = {}) {
         behaviors,
         parent: globalThis.canvas?.scene ?? null,
         async createEmbeddedDocuments(documentType, dataArray) {
-            const created = dataArray.map(data => ({ ...data, id: id("behavior"), uuid: `RegionBehavior.${id("uuid")}` }));
+            const created = dataArray.map(data =>
+                withBehaviorMutators({ ...data, id: id("behavior"), uuid: `RegionBehavior.${id("uuid")}` }, () => region.behaviors),
+            );
             if (documentType === "RegionBehavior") region.behaviors.push(...created);
             return created;
         },
