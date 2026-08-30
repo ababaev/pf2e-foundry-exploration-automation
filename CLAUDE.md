@@ -358,9 +358,14 @@ what lets PF2e's own Rule Elements for Keen Eyes, Sensate Gnome, Sharp-Eared Cat
 automatically — `NpcRosterRollHelperMacros.js` imports `getTargetRollOptions("npc")` and `getNaturalD20`
 directly from `SearchRollHelperMacros.js` (both exported for exactly this reuse) so it sends the *same* roll
 options native Search's Seek action already relies on for those feats, rather than a second copy that could
-drift. If the searching character has a `"sense-the-unseen"` item, the chat message adds a note flagging that
-to the GM — its effect isn't computed automatically, just surfaced so the GM can apply it by hand. The result
-is one GM-whispered chat message with a table of every roster NPC (some may be noticed, some not, since their
+drift. The chat message's header also shows PF2e's own modifier breakdown string (`resolved.check.breakdown`,
+resolved the same way `InvestigateRollHelperMacros.js`'s `resolveStatistic()` already does — a second,
+read-only `perceptionStatistic.withRollOptions({ extraRollOptions })` call purely to read `.check.breakdown`
+off the result, alongside the actual `.roll()` call above) — so the GM sees *which* named modifiers (Keen
+Eyes, Sensate Gnome, Sharp-Eared Catfolk, ...) contributed to the total, not just the number. If the
+searching character has a `"sense-the-unseen"` item, the chat message adds a separate note flagging that to
+the GM — its effect isn't computed automatically, just surfaced so the GM can apply it by hand. The result is
+one GM-whispered chat message with a table of every roster NPC (some may be noticed, some not, since their
 Stealth differs). A roster entry whose Token can no longer be resolved (deleted from the Scene since being
 added) is reported in the table, not silently dropped.
 

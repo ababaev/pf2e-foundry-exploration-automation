@@ -10,7 +10,7 @@ import { runNpcRoster } from "../../scripts/world-macros/NpcRosterFunctionMacros
  * for saveStatistic.roll()) — a raw new Roll("1d20") mock wouldn't exercise
  * that call at all.
  */
-function rollingPerception({ total, naturalRoll, modifier = 8, onRoll } = {}) {
+function rollingPerception({ total, naturalRoll, modifier = 8, onRoll, breakdown } = {}) {
     return {
         label: "Perception",
         rank: 2,
@@ -23,6 +23,9 @@ function rollingPerception({ total, naturalRoll, modifier = 8, onRoll } = {}) {
                 options: { totalModifier: modifier },
             };
         },
+        // Mirrors the real PF2e Statistic#withRollOptions() shape enough for
+        // NpcRosterRollHelperMacros.js's breakdown lookup (resolved.check.breakdown).
+        withRollOptions: breakdown === undefined ? undefined : () => ({ check: { breakdown } }),
     };
 }
 
@@ -128,6 +131,20 @@ test("NPC Roster Search: says nothing about Sense the Unseen when the character 
     await runNpcRoster({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
 
     assert.doesNotMatch(chatMessages[0].content, /Sense the Unseen/);
+});
+
+test("NPC Roster Search: shows the modifier breakdown (Keen Eyes, Sensate Gnome, Sharp-Eared Catfolk, etc.) so the GM can see where the total comes from", async () => {
+    const { chatMessages } = installBaseGlobals();
+    const actor = searchingActor({
+        perception: rollingPerception({ total: 25, naturalRoll: 15, breakdown: "Perception +8, Keen Eyes +2" }),
+    });
+    const token = makeToken(actor);
+    const behavior = makeRosterBehavior([npcWithStealth("Goblin", 5)]);
+
+    const result = await runNpcRoster({ behavior, event: { name: "tokenEnter", data: { token } }, region: {}, scene: {}, token, actor });
+
+    assert.equal(result.result.breakdown, "Perception +8, Keen Eyes +2");
+    assert.match(chatMessages[0].content, /Keen Eyes/);
 });
 
 test("NPC Roster Search: an unresolvable roster Token is reported in the table instead of silently dropped", async () => {

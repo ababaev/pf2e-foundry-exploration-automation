@@ -81,7 +81,7 @@ function npcRowHTML(row) {
     `;
 }
 
-function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen }) {
+function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen, breakdown }) {
     const rowsHTML = rows.map(npcRowHTML).join("");
 
     return `
@@ -93,6 +93,16 @@ function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen }) {
             <p style="margin: 0 0 0.6rem;">
                 Perception total: <strong>${escapeHTML(total)}</strong>
                 (natural ${escapeHTML(naturalRoll)})
+                ${
+                    breakdown
+                        ? `
+                            <br>
+                            <span style="font-size: 0.85em; opacity: 0.8;">
+                                ${escapeHTML(breakdown)}
+                            </span>
+                        `
+                        : ""
+                }
             </p>
 
             <table style="width: 100%; border-collapse: collapse;">
@@ -166,6 +176,8 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         return result;
     }
 
+    const rollOptions = getTargetRollOptions("npc");
+
     /*
      * Rolling through PF2e's own Check API (rather than a raw
      * new Roll("1d20")) — with the same roll options native Seek uses
@@ -180,7 +192,7 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         messageMode: "blindroll",
         title: "NPC Roster Search",
         slug: "pf2e-exploration-automation-npc-roster",
-        extraRollOptions: getTargetRollOptions("npc"),
+        extraRollOptions: rollOptions,
     });
 
     if (!perceptionRoll) {
@@ -193,13 +205,28 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
     const total = Number(perceptionRoll.total);
     const hasSenseTheUnseen = Boolean(actor.items?.find?.(item => item.slug === "sense-the-unseen"));
 
+    /*
+     * A second, read-only resolution of the same roll options (same
+     * pattern InvestigateRollHelperMacros.js's resolveStatistic()
+     * uses) purely to read off .check.breakdown — the human-readable
+     * "which modifiers actually applied" string PF2e computes, so the
+     * GM can see *why* the total is what it is (Keen Eyes, Sensate
+     * Gnome, Sharp-Eared Catfolk, etc.) instead of just a number. This
+     * doesn't affect the roll itself, which already happened above.
+     */
+    const resolvedStatistic =
+        typeof perceptionStatistic.withRollOptions === "function"
+            ? perceptionStatistic.withRollOptions({ extraRollOptions: rollOptions })
+            : perceptionStatistic;
+    const breakdown = resolvedStatistic.check?.breakdown ?? "";
+
     const rows = await Promise.all(npcs.map(npc => resolveNpcRow(npc, total, naturalRoll)));
 
     const message = await ChatMessage.create({
         author: game.user.id,
         speaker: { alias: actor.name ?? tokenDocument.name ?? "NPC Roster Search" },
         whisper: activeGMs.map(user => user.id),
-        content: buildContent({ naturalRoll, total, rows, hasSenseTheUnseen }),
+        content: buildContent({ naturalRoll, total, rows, hasSenseTheUnseen, breakdown }),
     });
 
     const result = {
@@ -210,6 +237,7 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         roll: perceptionRoll,
         rows,
         hasSenseTheUnseen,
+        breakdown,
         message,
         actorUuid: actor.uuid,
         tokenUuid: tokenDocument.uuid,
