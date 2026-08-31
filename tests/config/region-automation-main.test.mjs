@@ -309,6 +309,33 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' adds every currently-c
     assert.match(rosterBehavior.system.source, /\.requestBehaviorExecution/);
 });
 
+test("RegionAutomationMainMacros: 'Add Selected Token(s)' captures the Token's own current name, not a stale name held by the canvas placeable (e.g. right after a rename or duplicate)", async () => {
+    const region = makeRegion();
+    setupWorld({ regions: [{ document: region }] });
+
+    // The canvas placeable's own held .document.name is stale ("Azomi") —
+    // e.g. because it was renamed to "Azomi-duplicate" moments ago and the
+    // placeable's cached reference hasn't caught up. registerUuidDocument
+    // registers what a fresh fromUuid() lookup would actually return.
+    const npcToken = makeToken(makeActor({ name: "Azomi", type: "npc" }), { name: "Azomi" });
+    registerUuidDocument(npcToken.document.uuid, { ...npcToken.document, name: "Azomi-duplicate" });
+
+    globalThis.canvas.tokens.controlled = [npcToken];
+
+    const { wait } = queueDialogResponses([
+        rosterDialogResponse({
+            interact: clickAddSelected,
+        }),
+    ]);
+    globalThis.foundry.applications.api.DialogV2.wait = wait;
+
+    await runMacro();
+
+    const npcs = region.behaviors[0].flags[MODULE_ID].config.npcs;
+    assert.equal(npcs.length, 1);
+    assert.equal(npcs[0].name, "Azomi-duplicate");
+});
+
 test("RegionAutomationMainMacros: 'Add Selected Token(s)' with nothing selected warns and creates no Behavior", async () => {
     const region = makeRegion();
     const { notifications } = setupWorld({ regions: [{ document: region }] });

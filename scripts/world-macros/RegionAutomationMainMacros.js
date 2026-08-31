@@ -541,6 +541,34 @@ await (async () => {
                                     continue;
                                 }
 
+                                /*
+                                 * Re-resolve the Token document fresh
+                                 * via fromUuid rather than trusting
+                                 * the canvas placeable's own held
+                                 * .document reference, which can be
+                                 * stale (e.g. right after a rename in
+                                 * the same session) — this is the same
+                                 * authoritative lookup resolveNpcRow()
+                                 * already uses when rendering the
+                                 * roster table, so both stay
+                                 * consistent with each other and with
+                                 * the token's actual current name.
+                                 */
+                                let raResolvedToken =
+                                    null;
+
+                                try {
+                                    raResolvedToken =
+                                        await fromUuid(
+                                            tokenUuid,
+                                        );
+                                } catch (error) {
+                                    console.warn(
+                                        "Region Automation | Could not resolve a selected Token",
+                                        error,
+                                    );
+                                }
+
                                 raRosterNpcs = [
                                     ...raRosterNpcs,
                                     {
@@ -548,11 +576,15 @@ await (async () => {
                                             tokenUuid,
 
                                         tokenId:
+                                            raResolvedToken
+                                                ?.id ??
                                             raToken.document
                                                 ?.id ??
                                             raToken.id,
 
                                         name:
+                                            raResolvedToken
+                                                ?.name ??
                                             raToken.document
                                                 ?.name ??
                                             raToken.name,
