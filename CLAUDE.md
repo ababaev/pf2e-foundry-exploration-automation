@@ -192,12 +192,13 @@ the Node-test side too.
 are ported into the module proper (`MODULE_FUNCTIONS` in `executor.js`, backed by
 `world-macros/InvestigateFunctionMacros.js` / `SearchFunctionMacros.js` / `DetectMagicFunctionMacros.js` /
 `SavingThrowFunctionMacros.js` / `NpcRosterFunctionMacros.js`). `FUNCTION_MACRO_NAMES` and `executor.js`'s
-`game.macros.getName(...)` fallback path are kept only for a future not-yet-ported activity (e.g. Avoid
-Notice) — currently every functionality resolves through `MODULE_FUNCTIONS` and the fallback is dead code.
+`game.macros.getName(...)` fallback path are kept only for a future not-yet-ported activity — currently every
+functionality resolves through `MODULE_FUNCTIONS` and the fallback is dead code.
 `npc-roster` isn't part of the "per-activity macro triad" below — it has no Configuration dialog (see "NPC
 roster" further down) and its exploration-activity gate deliberately diverges from its functionality flag
-(gates on PF2e's real `"search"` activity, not an activity called "npc-roster") via `runTriggeredCheck`'s
-`explorationActivity` parameter.
+(gates on PF2e's real `"search"`/`"avoid-notice"` activities, not an activity called "npc-roster", and on
+*either one independently* — a character can be doing both at once) via `runTriggeredCheck`'s
+`explorationActivity` parameter, which accepts an array for exactly this case.
 
 To port a future activity, follow `SearchFunctionMacros.js` as the template — it's the thinnest:
 
@@ -262,12 +263,18 @@ Only used by the module-only files (never by the paste-only macros, which can't 
   (`requireExplorationActivity: false` skips the exploration-activity gate — see Saving Throw;
   `skipRegistration: true` skips the one-shot registration and its rollback — see "On-demand triggering"
   above; `explorationActivity` defaults to `activity` and only needs to be passed when they diverge — see
-  `npc-roster`, which gates on PF2e's real `"search"` exploration activity while its own functionality flag
-  is `"npc-roster"`). It imports `checkExplorationActivity` and `registerTokenTrigger` directly and drives them through
+  `npc-roster`, which gates on PF2e's real `"search"`/`"avoid-notice"` exploration activities while its own
+  functionality flag is `"npc-roster"`). `explorationActivity` may be a single slug or an **array** — every
+  candidate currently active (not just the first) is passed through to `runRoll`'s context as
+  `explorationActivities`, since an actor can be performing more than one at once; `npc-roster`'s own
+  `runRoll` checks each independently and rolls whichever applies. It imports `checkExplorationActivity` and
+  `registerTokenTrigger` directly and drives them through
   the same `resultBox` contract those two paste-style files still expose internally. On a successful roll
   (`rollResult.message` present), it also calls `logToGMJournal` — this fires for every trigger path (real
   Region entry, the on-demand "run for the party" macro, skipRegistration or not) since they all funnel
-  through this one function.
+  through this one function. (`npc-roster` is the one exception: it can produce two messages from a single
+  trigger, so it bypasses this generic single-message auto-log and calls `logToGMJournal` itself instead —
+  see "NPC roster" below.)
 
 ### Per-activity macro triad
 
@@ -334,7 +341,7 @@ near the top (guard clauses + `editorState` seeding) and one near the bottom (cr
 in between operates purely on `editorState`/`submittedConfiguration` and doesn't know or care which mode
 it's in.
 
-### NPC roster (Search vs. every roster NPC's own Stealth)
+### NPC roster (Search vs. Stealth, Avoid Notice vs. Perception — both ways, independently)
 
 `RegionAutomationMainMacros.js`'s top dialog also manages a per-Region roster of NPC tokens (select NPC
 tokens on the canvas and click "Add Selected Token(s)"; double-click an entry to remove it). The roster is
@@ -346,28 +353,49 @@ empties out again (`findRosterBehavior`/`saveRoster` in `RegionAutomationMainMac
 It's a real, active automation: `system.events: ["tokenEnter"]` and `system.source` is a literal copy of
 `GENERIC_BEHAVIOR_SOURCE` (this paste-only file can't `import` it — `migrate-behaviors.js`'s
 `SUPPORTED_FUNCTIONALITIES` including `"npc-roster"` self-heals that copy back to the canonical source on the
-next `ready` if it ever drifts). When a character performing PF2e's real `"search"` exploration activity
-enters, `world-macros/NpcRosterFunctionMacros.js`/`NpcRosterRollHelperMacros.js` (registered in `executor.js`'s
-`MODULE_FUNCTIONS`, following exactly the porting shape described above) roll that character's Perception
-**once** — through the actor's own `perceptionStatistic.roll({ extraRollOptions })` (PF2e's Check API, the
-same mechanism `SavingThrowRollHelperMacros.js` uses for saves), not a raw `new Roll("1d20")` — and compare
-its total against **every roster NPC's own Stealth DC (10 + their Stealth modifier)**, the mirror image of
-Investigate/DetectMagic's "one shared roll vs several DCs" pattern, just keyed by NPC instead of by skill.
-Rolling through the Check API (rather than a raw d20 plus a manually-added static modifier) matters: it's
-what lets PF2e's own Rule Elements for Keen Eyes, Sensate Gnome, Sharp-Eared Catfolk, etc. apply
-automatically — `NpcRosterRollHelperMacros.js` imports `getTargetRollOptions("npc")` and `getNaturalD20`
-directly from `SearchRollHelperMacros.js` (both exported for exactly this reuse) so it sends the *same* roll
-options native Search's Seek action already relies on for those feats, rather than a second copy that could
-drift. The chat message's header also shows PF2e's own modifier breakdown string (`resolved.check.breakdown`,
-resolved the same way `InvestigateRollHelperMacros.js`'s `resolveStatistic()` already does — a second,
-read-only `perceptionStatistic.withRollOptions({ extraRollOptions })` call purely to read `.check.breakdown`
-off the result, alongside the actual `.roll()` call above) — so the GM sees *which* named modifiers (Keen
-Eyes, Sensate Gnome, Sharp-Eared Catfolk, ...) contributed to the total, not just the number. If the
-searching character has a `"sense-the-unseen"` item, the chat message adds a separate note flagging that to
-the GM — its effect isn't computed automatically, just surfaced so the GM can apply it by hand. The result is
-one GM-whispered chat message with a table of every roster NPC (some may be noticed, some not, since their
-Stealth differs). A roster entry whose Token can no longer be resolved (deleted from the Scene since being
-added) is reported in the table, not silently dropped.
+next `ready` if it ever drifts). `world-macros/NpcRosterFunctionMacros.js` (registered in `executor.js`'s
+`MODULE_FUNCTIONS`) handles **two independent directions**, since a character can be performing PF2e's real
+`"search"` and `"avoid-notice"` exploration activities **at the same time** (not mutually exclusive) — it
+checks each one separately and runs whichever applies (zero, one, or both), from **one shared** one-shot
+registration regardless of how many directions fire (a token that already triggered anything on this
+Behavior doesn't get a free second entry later):
+
+- **Search** (`NpcRosterSearchRollHelperMacros.js`, `runNpcRosterSearchRoll`): rolls the entering character's
+  Perception once, compares it against **every roster NPC's own Stealth DC** (10 + their Stealth modifier).
+- **Avoid Notice** (`NpcRosterAvoidNoticeRollHelperMacros.js`, `runNpcRosterAvoidNoticeRoll`): rolls the
+  entering character's Stealth once, compares it against **every roster NPC's own passive Perception DC** (10
+  + their Perception modifier) — the mirror image of Search.
+
+Both are the same "one shared roll vs several DCs" pattern Investigate/DetectMagic already use, just keyed by
+NPC instead of by skill; the row-resolution/table-rendering logic itself (`resolveNpcRow`/`npcRowHTML`,
+parameterized by which statistic to check on the NPC) is factored into `shared/npc-roster.js` so the two
+directions share it instead of duplicating it. Both roll through PF2e's Check API
+(`statistic.roll({ extraRollOptions })`, the same mechanism `SavingThrowRollHelperMacros.js` uses for saves)
+rather than a raw `new Roll("1d20")` plus a manually-added static modifier — that's what lets PF2e's own Rule
+Elements (Keen Eyes, Sensate Gnome, Sharp-Eared Catfolk, etc. for Search) apply automatically. Search reuses
+the *exact* roll options native Search's Seek action already relies on for those feats
+(`getTargetRollOptions("npc")`/`getNaturalD20`, exported from `SearchRollHelperMacros.js` for this reuse, so
+there's no second copy to drift). Avoid Notice's own roll options have no existing precedent in this codebase
+to copy from — they're a best-effort guess (`"action:avoid-notice"`, `"action:hide"`, ...), unverified against
+a real PF2e install. Both directions also show PF2e's own modifier breakdown string in the chat message
+(`resolved.check.breakdown`, resolved the same way `InvestigateRollHelperMacros.js`'s `resolveStatistic()`
+does — a second, read-only `statistic.withRollOptions({ extraRollOptions })` call purely to read the
+breakdown off, alongside the actual `.roll()` call), so the GM sees *which* named modifiers contributed to
+the total, not just the number. If the searching character has a `"sense-the-unseen"` item, Search's message
+adds a note flagging that to the GM — its effect isn't computed automatically, just surfaced. A roster entry
+whose Token can no longer be resolved, or whose Actor lacks the statistic being checked, is reported in the
+table either way, not silently dropped.
+
+**How "check each independently, roll each that applies" is wired**: `shared/trigger-flow.js`'s
+`runTriggeredCheck` accepts `explorationActivity` as a string (existing activities) *or an array*
+(`["search", "avoid-notice"]` here) — every candidate that's currently active (via
+`checkExplorationActivity`'s `activeActivities`, which already lists everything active regardless of which
+single slug is asked about — no change needed there) is passed through to `runRoll`'s context as
+`explorationActivities` (plural), not just the first match. `NpcRosterFunctionMacros.js`'s `runRoll` is two
+independent `if (context.explorationActivities.includes(...))` checks, each calling its own roll helper if it
+applies; `runTriggeredCheck`'s own generic single-message GM-journal auto-log is bypassed here (the combined
+result carries no top-level `.message`, since there can be two) — `NpcRosterFunctionMacros.js` calls
+`logToGMJournal` itself for each message actually produced.
 
 This is intentionally independent of, and can coexist on the same Region with, the pre-existing
 manually-configured single-target Search triad (`SearchConfigurationMacros.js` / `SearchFunctionMacros.js` /

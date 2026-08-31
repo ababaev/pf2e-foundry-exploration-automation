@@ -1,85 +1,11 @@
 import { escapeHTML } from "./shared/html.js";
-import { getDegreeOfSuccess, getResultStyle } from "./shared/checks.js";
 import { getActiveGMs } from "./shared/gm.js";
 import { getNaturalD20, getTargetRollOptions } from "./SearchRollHelperMacros.js";
+import { resolveNpcRow, npcRowHTML } from "./shared/npc-roster.js";
 import { MODULE_ID } from "../module-id.js";
 
-/**
- * Resolve one roster entry's current Token/Actor and Stealth DC.
- *
- * Returns a row descriptor either way — an entry whose Token can no
- * longer be resolved (deleted from the Scene since being added to the
- * roster) or whose Actor has no Stealth statistic is reported in the
- * table rather than silently dropped, with `dc`/`degree` left null.
- */
-async function resolveNpcRow(npc, total, naturalRoll) {
-    let tokenDocument = null;
-
-    try {
-        tokenDocument = await fromUuid(npc.uuid);
-    } catch (error) {
-        console.warn("Region Automation | Could not resolve a roster Token", { npc, error });
-    }
-
-    const npcActor = tokenDocument?.actor ?? null;
-
-    if (!npcActor) {
-        return { npc, unavailable: true, dc: null, degree: null };
-    }
-
-    const stealthStatistic = npcActor.getStatistic?.("stealth") ?? npcActor.skills?.stealth ?? null;
-
-    if (!stealthStatistic) {
-        return { npc, unavailable: false, noStealth: true, dc: null, degree: null };
-    }
-
-    const stealthModifier = Number(stealthStatistic.check?.mod ?? stealthStatistic.mod ?? 0);
-    const dc = 10 + stealthModifier;
-    const degree = getDegreeOfSuccess(total, dc, naturalRoll);
-
-    return { npc, unavailable: false, noStealth: false, dc, degree };
-}
-
-function npcRowHTML(row) {
-    const label = escapeHTML(row.npc.name ?? "Unknown NPC");
-
-    if (row.unavailable) {
-        return `
-            <tr>
-                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
-                    ${label}
-                </td>
-                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-style: italic; opacity: 0.7;">
-                    Token no longer available
-                </td>
-            </tr>
-        `;
-    }
-
-    if (row.noStealth) {
-        return `
-            <tr>
-                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
-                    ${label}
-                </td>
-                <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); font-style: italic; opacity: 0.7;">
-                    No Stealth statistic
-                </td>
-            </tr>
-        `;
-    }
-
-    return `
-        <tr>
-            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary);">
-                ${label}
-            </td>
-            <td style="padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border-light-primary); ${getResultStyle(row.degree)}">
-                vs DC ${escapeHTML(row.dc)}
-            </td>
-        </tr>
-    `;
-}
+const STATISTIC_SLUG = "stealth";
+const STATISTIC_LABEL = "Stealth";
 
 function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen, breakdown }) {
     const rowsHTML = rows.map(npcRowHTML).join("");
@@ -134,9 +60,10 @@ function buildContent({ naturalRoll, total, rows, hasSenseTheUnseen, breakdown }
  * it against every roster NPC's own Stealth DC (10 + their Stealth
  * modifier) — the mirror image of Investigate/DetectMagic's "one
  * shared d20 vs several DCs" pattern, keyed by NPC instead of by
- * skill.
+ * skill. See NpcRosterAvoidNoticeRollHelperMacros.js for the reverse
+ * direction (Stealth vs. every NPC's passive Perception).
  */
-export async function runNpcRosterRoll({ actor = null, token = null, behavior = null, event = null, region = null, scene = null, debug = true } = {}) {
+export async function runNpcRosterSearchRoll({ actor = null, token = null, behavior = null, event = null, region = null, scene = null, debug = true } = {}) {
     const tokenDocument = token?.document ?? token ?? null;
 
     if (!actor || !tokenDocument || !behavior) {
@@ -191,7 +118,7 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
         createMessage: false,
         messageMode: "blindroll",
         title: "NPC Roster Search",
-        slug: "pf2e-exploration-automation-npc-roster",
+        slug: "pf2e-exploration-automation-npc-roster-search",
         extraRollOptions: rollOptions,
     });
 
@@ -220,7 +147,9 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
             : perceptionStatistic;
     const breakdown = resolvedStatistic.check?.breakdown ?? "";
 
-    const rows = await Promise.all(npcs.map(npc => resolveNpcRow(npc, total, naturalRoll)));
+    const rows = await Promise.all(
+        npcs.map(npc => resolveNpcRow(npc, { statisticSlug: STATISTIC_SLUG, statisticLabel: STATISTIC_LABEL, total, naturalRoll })),
+    );
 
     const message = await ChatMessage.create({
         author: game.user.id,
@@ -256,7 +185,7 @@ export async function runNpcRosterRoll({ actor = null, token = null, behavior = 
                 dc: row.dc,
                 degree: row.degree,
                 unavailable: row.unavailable ?? false,
-                noStealth: row.noStealth ?? false,
+                noStatistic: row.noStatistic ?? false,
             })),
         );
         console.log("Complete helper result", result);

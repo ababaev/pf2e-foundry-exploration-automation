@@ -16,6 +16,11 @@ function idleActor() {
     return makeActor({ name: "Idler", exploration: [] });
 }
 
+function actorPerforming(...slugs) {
+    const items = slugs.map(slug => makeExplorationItem({ id: `item-${slug}`, slug, name: slug }));
+    return makeActor({ name: "Adventurer", exploration: items.map(item => item.id), items });
+}
+
 function baseArgs(overrides = {}) {
     const actor = overrides.actor ?? searchingActor();
     const token = overrides.token ?? makeToken(actor);
@@ -142,6 +147,72 @@ test("runTriggeredCheck: explorationActivity defaults to activity, so an npc-ros
             token,
             behavior,
             activity: "npc-roster",
+            runRoll: async () => { rollCalled = true; return { ok: true }; },
+        }),
+    );
+
+    assert.equal(result.reason, "not-performing-activity");
+    assert.equal(rollCalled, false);
+});
+
+test("runTriggeredCheck: explorationActivity as an array gates on any candidate, not just the first", async () => {
+    installBaseGlobals();
+    const actor = actorPerforming("avoid-notice"); // not "search", the first candidate
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "npc-roster", config: { npcs: [] } });
+
+    let capturedActivities = null;
+    const result = await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            activity: "npc-roster",
+            explorationActivity: ["search", "avoid-notice"],
+            runRoll: async context => { capturedActivities = context.explorationActivities; return { ok: true }; },
+        }),
+    );
+
+    assert.equal(result.rolled, true);
+    assert.deepEqual(capturedActivities, ["avoid-notice"]);
+});
+
+test("runTriggeredCheck: explorationActivity as an array passes every matching candidate through, not just one, when the actor is performing more than one at once", async () => {
+    installBaseGlobals();
+    const actor = actorPerforming("search", "avoid-notice");
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "npc-roster", config: { npcs: [] } });
+
+    let capturedActivities = null;
+    const result = await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            activity: "npc-roster",
+            explorationActivity: ["search", "avoid-notice"],
+            runRoll: async context => { capturedActivities = context.explorationActivities; return { ok: true }; },
+        }),
+    );
+
+    assert.equal(result.rolled, true);
+    assert.deepEqual(capturedActivities, ["search", "avoid-notice"]);
+});
+
+test("runTriggeredCheck: explorationActivity as an array gates out when none of the candidates are active", async () => {
+    installBaseGlobals();
+    const actor = idleActor();
+    const token = makeToken(actor);
+    const behavior = makeBehavior({ functionality: "npc-roster", config: { npcs: [] } });
+
+    let rollCalled = false;
+    const result = await runTriggeredCheck(
+        baseArgs({
+            actor,
+            token,
+            behavior,
+            activity: "npc-roster",
+            explorationActivity: ["search", "avoid-notice"],
             runRoll: async () => { rollCalled = true; return { ok: true }; },
         }),
     );

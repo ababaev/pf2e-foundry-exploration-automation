@@ -67,8 +67,8 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
 /**
  * @param {string} label - Human-readable activity name for logs/notifications, e.g. "Search".
  * @param {string} activity - Functionality flag this Behavior's flags.functionality must match, e.g. "search". Also used as the exploration-activity slug for the checkExplorationActivity gate unless `explorationActivity` is given or `requireExplorationActivity` is false.
- * @param {string} [explorationActivity] - Exploration-activity slug to gate on, when it differs from `activity` (e.g. the "npc-roster" functionality gates on the real PF2e "search" activity, not an exploration activity called "npc-roster"). Defaults to `activity`.
- * @param {boolean} [requireExplorationActivity] - Whether the actor must currently be performing the `explorationActivity` exploration activity. Defaults to true; pass false for triggers not tied to a selectable PF2e exploration activity (e.g. Saving Throw), which then fire regardless of what the actor is doing.
+ * @param {string|string[]} [explorationActivity] - Exploration-activity slug(s) to gate on, when they differ from `activity` (e.g. the "npc-roster" functionality gates on the real PF2e "search"/"avoid-notice" activities, not an exploration activity called "npc-roster"). May be an array — the actor can be performing more than one at once, and every one that matches is passed through to `runRoll` (see `explorationActivities` below), not just the first. Defaults to `activity`.
+ * @param {boolean} [requireExplorationActivity] - Whether the actor must currently be performing at least one of the `explorationActivity` exploration activities. Defaults to true; pass false for triggers not tied to a selectable PF2e exploration activity (e.g. Saving Throw), which then fire regardless of what the actor is doing.
  * @param {boolean} [skipRegistration] - Skip the one-shot triggeredTokenUuids registration (and its technical-failure rollback) entirely. Defaults to false; pass true for on-demand runs with no physical Region entry to dedupe against.
  * @param {object} behavior - RegionBehavior document.
  * @param {object} event - Region event ({ name, data: { token }, ... }).
@@ -77,7 +77,7 @@ async function rollBackTriggeredToken({ label, behavior, token }) {
  * @param {object} token - TokenDocument (falls back to event.data.token).
  * @param {object} actor - Actor document (falls back to token.actor).
  * @param {(config: object) => { ok: boolean }} validateConfig - Validates behavior.flags[MODULE_ID].config.
- * @param {(context: { actor, token, behavior, event, region, scene }) => Promise<{ ok: boolean }>} runRoll
+ * @param {(context: { actor, token, behavior, event, region, scene, explorationActivities: string[] }) => Promise<{ ok: boolean }>} runRoll
  * @returns {Promise<{ ok: boolean, rolled: boolean, reason: string, result?: object }>} `rolled` is true only
  *   when `runRoll` actually executed and returned `{ ok: true }` — everything gated out earlier (wrong event,
  *   invalid config, exploration-activity gate, already registered) comes back `rolled: false` with a `reason`
@@ -166,14 +166,24 @@ export async function runTriggeredCheck({
      * Step 1: exploration activity gate. Skipped when
      * requireExplorationActivity is false.
      */
+    let matchedExplorationActivities = [];
+
     if (requireExplorationActivity) {
+        const candidateActivities = Array.isArray(explorationActivity) ? explorationActivity : [explorationActivity];
         let explorationResult;
 
         try {
+            /*
+             * checkExplorationActivity's activeActivities lists every
+             * exploration-activity slug currently active on the actor
+             * regardless of which single slug is requested here — so
+             * one call is enough to check every candidate, not one
+             * call per candidate.
+             */
             explorationResult = await callWithResultBox(checkExplorationActivity, {
                 token: resolvedToken,
                 actor: resolvedActor,
-                activity: explorationActivity,
+                activity: candidateActivities[0],
                 debug: true,
             });
         } catch (error) {
@@ -191,12 +201,18 @@ export async function runTriggeredCheck({
             return { ok: false, rolled: false, reason: "exploration-activity-could-not-be-checked" };
         }
 
-        if (!explorationResult.active) {
+        const activeSlugs = new Set((explorationResult.activeActivities ?? []).map(item => item.slug));
+        matchedExplorationActivities = candidateActivities.filter(slug => activeSlugs.has(slug));
+
+        if (matchedExplorationActivities.length === 0) {
             console.info(`Region Automation | ${resolvedActor.name} is not performing ${label}; execution stopped.`, explorationResult);
             return { ok: true, rolled: false, reason: "not-performing-activity" };
         }
 
-        console.log(`Region Automation | ${resolvedActor.name} is performing ${label}; continuing.`, explorationResult);
+        console.log(`Region Automation | ${resolvedActor.name} is performing ${label}; continuing.`, {
+            explorationResult,
+            matchedExplorationActivities,
+        });
     }
 
     /*
@@ -255,6 +271,7 @@ export async function runTriggeredCheck({
             event,
             region: resolvedRegion,
             scene: resolvedScene,
+            explorationActivities: matchedExplorationActivities,
         });
     } catch (error) {
         console.error(`Region Automation | ${label} roll helper failed`, error);
