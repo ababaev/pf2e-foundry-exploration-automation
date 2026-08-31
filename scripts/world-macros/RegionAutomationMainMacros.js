@@ -550,9 +550,19 @@ await (async () => {
                                  * the same session) — this is the same
                                  * authoritative lookup resolveNpcRow()
                                  * already uses when rendering the
-                                 * roster table, so both stay
-                                 * consistent with each other and with
-                                 * the token's actual current name.
+                                 * roster table.
+                                 *
+                                 * NPC tokens are normally unlinked, so
+                                 * each one carries its own private
+                                 * actor-data copy — a GM renaming the
+                                 * creature via its own sheet (the
+                                 * common workflow) updates that
+                                 * per-token actor's .name, not the
+                                 * separate TokenDocument "Token Name"
+                                 * nameplate field. Prefer the actor's
+                                 * name for that reason; the nameplate
+                                 * field is still the fallback for a
+                                 * token with no resolvable actor.
                                  */
                                 let raResolvedToken =
                                     null;
@@ -584,6 +594,11 @@ await (async () => {
 
                                         name:
                                             raResolvedToken
+                                                ?.actor
+                                                ?.name ??
+                                            raResolvedToken
+                                                ?.name ??
+                                            raToken.actor
                                                 ?.name ??
                                             raToken.document
                                                 ?.name ??

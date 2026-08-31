@@ -309,16 +309,20 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' adds every currently-c
     assert.match(rosterBehavior.system.source, /\.requestBehaviorExecution/);
 });
 
-test("RegionAutomationMainMacros: 'Add Selected Token(s)' captures the Token's own current name, not a stale name held by the canvas placeable (e.g. right after a rename or duplicate)", async () => {
+test("RegionAutomationMainMacros: 'Add Selected Token(s)' captures the token's own actor name (per-token, since NPCs are normally unlinked), not the separate Token Name nameplate field", async () => {
     const region = makeRegion();
     setupWorld({ regions: [{ document: region }] });
 
-    // The canvas placeable's own held .document.name is stale ("Azomi") —
-    // e.g. because it was renamed to "Azomi-duplicate" moments ago and the
-    // placeable's cached reference hasn't caught up. registerUuidDocument
-    // registers what a fresh fromUuid() lookup would actually return.
-    const npcToken = makeToken(makeActor({ name: "Azomi", type: "npc" }), { name: "Azomi" });
-    registerUuidDocument(npcToken.document.uuid, { ...npcToken.document, name: "Azomi-duplicate" });
+    // An unlinked NPC token: the base Actor and the TokenDocument's own
+    // "Token Name" nameplate field both still say "Esipil", but the GM
+    // renamed the creature via its own sheet, which — for an unlinked
+    // token — only updates that token's private actor-data copy
+    // (tokenDocument.actor.name), not the nameplate field.
+    const npcToken = makeToken(makeActor({ name: "Esipil", type: "npc" }), { name: "Esipil" });
+    registerUuidDocument(npcToken.document.uuid, {
+        ...npcToken.document,
+        actor: { ...npcToken.actor, name: "Bagira" },
+    });
 
     globalThis.canvas.tokens.controlled = [npcToken];
 
@@ -333,7 +337,7 @@ test("RegionAutomationMainMacros: 'Add Selected Token(s)' captures the Token's o
 
     const npcs = region.behaviors[0].flags[MODULE_ID].config.npcs;
     assert.equal(npcs.length, 1);
-    assert.equal(npcs[0].name, "Azomi-duplicate");
+    assert.equal(npcs[0].name, "Bagira");
 });
 
 test("RegionAutomationMainMacros: 'Add Selected Token(s)' with nothing selected warns and creates no Behavior", async () => {

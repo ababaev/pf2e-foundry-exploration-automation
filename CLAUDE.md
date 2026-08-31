@@ -350,6 +350,14 @@ stored on its own service `RegionBehavior` (`functionality: "npc-roster"`, `flag
 empties out again (`findRosterBehavior`/`saveRoster` in `RegionAutomationMainMacros.js`) — same overall shape
 (`schemaVersion`/`functionality`/`config`/`triggeredTokenUuids`) as every other automation's flags.
 
+`name` is captured, on add, as `resolvedToken.actor?.name ?? resolvedToken.name ?? ...` (re-resolved fresh via
+`fromUuid`, not trusted from the canvas placeable's own held reference, which can be stale right after a
+same-session rename) — **actor name first, deliberately**. NPC tokens are normally unlinked, so each one
+carries its own private actor-data copy; a GM renaming a creature via its own sheet (the natural workflow)
+updates that per-token actor's `.name`, not the separate `TokenDocument#name` "Token Name" nameplate field
+(Configure Token → Identity tab) — the two are independent fields that can (and often do) disagree, and the
+actor's name is what a GM actually means by "this creature's name" in the overwhelming majority of cases.
+
 It's a real, active automation: `system.events: ["tokenEnter"]` and `system.source` is a literal copy of
 `GENERIC_BEHAVIOR_SOURCE` (this paste-only file can't `import` it — `migrate-behaviors.js`'s
 `SUPPORTED_FUNCTIONALITIES` including `"npc-roster"` self-heals that copy back to the canonical source on the
